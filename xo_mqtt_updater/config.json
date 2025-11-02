@@ -1,16 +1,22 @@
 {
-  "name": "XCP-ng XO MQTT Updater",
-  "version": "1.0.9",
+  "name": "XO MQTT Updater",
+  "version": "1.1.0",
   "slug": "xo_mqtt_updater",
-  "description": "Pravidelně čte metriky z XCP-ng hosta a publikuje do MQTT s podporou MQTT Discovery",
+  "description": "Publikuje metriky XO/XCP-ng přes MQTT do Home Assistant",
   "arch": ["amd64", "armv7", "aarch64"],
-  "startup": "services",
+  "startup": "application",
   "boot": "auto",
+  "host_network": true,
   "options": {
-    "xo_url": "http://xo.local",
-    "host_uuid": "",
+    "xo_url": "https://xo.local",
+    "xo_token": "",
     "username": "admin",
     "password": "password",
+    "verify_ssl": false,
+    "objects": [
+      {"type": "host", "uuid": "uuid1", "name": "Host1"},
+      {"type": "vm", "uuid": "uuid2", "name": "VM1"}
+    ],
     "mqtt_host": "core-mosquitto",
     "mqtt_port": 1883,
     "mqtt_user": "",
@@ -19,17 +25,16 @@
   },
   "schema": {
     "xo_url": "str",
-    "host_uuid": "str",
+    "xo_token": "str",
     "username": "str",
     "password": "str",
+    "verify_ssl": "bool",
+    "objects": "list",
     "mqtt_host": "str",
     "mqtt_port": "int",
     "mqtt_user": "str",
     "mqtt_password": "str",
     "update_interval": "int"
   },
-  "ports": {},
-  "map": ["config:rw"],
-  "host_network": true,
-  "logo": "logo.png"
+  "image": "local/python:3.12-slim"
 }
