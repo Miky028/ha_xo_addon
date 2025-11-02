@@ -30,15 +30,19 @@ def publish_discovery(client, host_uuid):
         client.publish(discovery_topic, json.dumps(payload), retain=True)
 
 def fetch_metrics(xo_url, host_uuid, username, password):
-    r = requests.get(f"{xo_url}/api/host/{host_uuid}", auth=(username, password))
-    if r.status_code != 200:
-        print(f"Chyba při volání XO API: {r.status_code}")
+    try:
+        r = requests.get(f"{xo_url}/api/host/{host_uuid}", auth=(username, password), timeout=10)
+        if r.status_code != 200:
+            print(f"Chyba při volání XO API: {r.status_code}")
+            return {}
+        data = r.json().get("metrics", {})
+        # převod network na Mbps
+        if "network" in data:
+            data["network"] = data["network"] * 8 / 1_000_000
+        return data
+    except Exception as e:
+        print(f"Chyba při připojení k XO API: {e}")
         return {}
-    data = r.json().get("metrics", {})
-    # převod network na Mbps
-    if "network" in data:
-        data["network"] = data["network"] * 8 / 1_000_000
-    return data
 
 def main():
     parser = argparse.ArgumentParser()
