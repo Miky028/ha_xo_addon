@@ -49,7 +49,8 @@ def main():
     parser.add_argument("--host_uuid", required=True)
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
-    parser.add_argument("--mqtt_server", required=True)
+    parser.add_argument("--mqtt_host", required=True)
+    parser.add_argument("--mqtt_port", type=int, default=1883)
     parser.add_argument("--mqtt_user", default="")
     parser.add_argument("--mqtt_password", default="")
     parser.add_argument("--interval", type=int, default=30)
@@ -58,7 +59,7 @@ def main():
     client = mqtt.Client()
     if args.mqtt_user and args.mqtt_password:
         client.username_pw_set(args.mqtt_user, args.mqtt_password)
-    client.connect(args.mqtt_server)
+    client.connect(args.mqtt_host, args.mqtt_port)
 
     publish_discovery(client, args.host_uuid)
 
