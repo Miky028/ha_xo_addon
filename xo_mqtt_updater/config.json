@@ -1,6 +1,6 @@
 {
   "name": "XO MQTT Updater",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "slug": "xo_mqtt_updater",
   "description": "Publikuje statistiky jednoho hosta XO přes MQTT do Home Assistant (token-only) s rozšířeným debug logováním",
   "arch": ["amd64", "armv7", "aarch64"],
