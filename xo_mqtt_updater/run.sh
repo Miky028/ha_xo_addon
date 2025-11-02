@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 XO_URL=${XO_URL:-"http://xo.local"}
 HOST_UUID=${HOST_UUID:-""}
