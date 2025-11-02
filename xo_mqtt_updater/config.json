@@ -31,5 +31,5 @@
     "mqtt_user": "str",
     "mqtt_password": "str",
     "update_interval": "int"
-  },
+  }
 }
