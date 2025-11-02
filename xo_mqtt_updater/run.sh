@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 set -e
 
-cat /data/options.json
+CONFIG_FILE="/data/options.json"
 
-XO_URL=${XO_URL:-"http://xo.local"}
-HOST_UUID=${HOST_UUID:-""}
-USERNAME=${USERNAME:-"admin"}
-PASSWORD=${PASSWORD:-"password"}
-MQTT_HOST=${MQTT_HOST:-"core-mosquitto"}
-MQTT_PORT=${MQTT_PORT:-1883}
-MQTT_USER=${MQTT_USER:-""}
-MQTT_PASSWORD=${MQTT_PASSWORD:-""}
-UPDATE_INTERVAL=${UPDATE_INTERVAL:-30}
+XO_URL=$(jq -r '.xo_url' $CONFIG_FILE)
+HOST_UUID=$(jq -r '.host_uuid' $CONFIG_FILE)
+USERNAME=$(jq -r '.username' $CONFIG_FILE)
+PASSWORD=$(jq -r '.password' $CONFIG_FILE)
+MQTT_HOST=$(jq -r '.mqtt_host' $CONFIG_FILE)
+MQTT_PORT=$(jq -r '.mqtt_port' $CONFIG_FILE)
+MQTT_USER=$(jq -r '.mqtt_user' $CONFIG_FILE)
+MQTT_PASSWORD=$(jq -r '.mqtt_password' $CONFIG_FILE)
+UPDATE_INTERVAL=$(jq -r '.update_interval' $CONFIG_FILE)
 
-set -x
-echo "Spouštím XO MQTT updater..."
-python /xo_updater.py \
+echo "[RUN.SH] Spouštím XO MQTT updater..." 
+
+exec python /xo_updater.py \
     --xo_url "$XO_URL" \
     --host_uuid "$HOST_UUID" \
     --username "$USERNAME" \
