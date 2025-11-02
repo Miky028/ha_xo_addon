@@ -1,9 +1,15 @@
+#!/usr/bin/env python3
 import argparse
 import time
 import json
 import requests
 import paho.mqtt.client as mqtt
+import urllib3
 
+# potlačení varování pro self-signed certifikáty
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# definice metrik
 METRICS = {
     "cpu": {"unit": "%", "name": "CPU Usage"},
     "ram": {"unit": "%", "name": "RAM Usage"},
@@ -12,7 +18,7 @@ METRICS = {
 }
 
 def log(msg):
-    print(f"[XO MQTT Updater] {msg}")
+    print(f"[XO MQTT Updater] {msg}", flush=True)
 
 def publish_discovery(client, host_uuid):
     log(f"Publikuji MQTT Discovery pro host {host_uuid}")
@@ -40,16 +46,27 @@ def publish_discovery(client, host_uuid):
 def fetch_metrics(xo_url, host_uuid, username, password):
     log(f"Načítám metriky z XO API host {host_uuid}")
     try:
-        r = requests.get(f"{xo_url}/api/host/{host_uuid}", auth=(username, password), timeout=10)
+        r = requests.get(
+            f"{xo_url}/api/host/{host_uuid}",
+            auth=(username, password),
+            timeout=10,
+            verify=False  # ignoruje SSL certifikát
+        )
         if r.status_code != 200:
             log(f"Chyba XO API: {r.status_code} {r.text}")
             return {}
         data = r.json().get("metrics", {})
+
         if "network" in data:
-            data["network"] = data["network"] * 8 / 1_000_000  # Mbps
+            data["network"] = data["network"] * 8 / 1_000_000  # převod na Mbps
+
         log(f"Načtené metriky: {data}")
         return data
-    except Exception as e:
+
+    except requests.exceptions.SSLError as e:
+        log(f"SSL chyba při připojení k XO API: {e}")
+        return {}
+    except requests.exceptions.RequestException as e:
         log(f"Chyba při připojení k XO API: {e}")
         return {}
 
@@ -66,17 +83,23 @@ def main():
     parser.add_argument("--interval", type=int, default=30)
     args = parser.parse_args()
 
+    if not args.host_uuid:
+        log("Chyba: host_uuid není nastavený!")
+        exit(1)
+
     log("Inicializuji MQTT klienta...")
     client = mqtt.Client()
     if args.mqtt_user and args.mqtt_password:
         client.username_pw_set(args.mqtt_user, args.mqtt_password)
         log(f"Používám MQTT uživatele {args.mqtt_user}")
+    
     try:
+        log(f"Pokouším se připojit k MQTT brokeru {args.mqtt_host}:{args.mqtt_port}")
         client.connect(args.mqtt_host, args.mqtt_port)
         log(f"Připojeno k MQTT brokeru {args.mqtt_host}:{args.mqtt_port}")
     except Exception as e:
         log(f"Chyba při připojení k MQTT brokeru: {e}")
-        return
+        exit(1)
 
     publish_discovery(client, args.host_uuid)
 
