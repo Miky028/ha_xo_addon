@@ -1,17 +1,15 @@
 {
   "name": "XO MQTT Updater",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "slug": "xo_mqtt_updater",
-  "description": "Publikuje metriky XO/XCP-ng přes MQTT do Home Assistant",
+  "description": "Publikuje metriky XO/XCP-ng přes MQTT do Home Assistant (token-based)",
   "arch": ["amd64", "armv7", "aarch64"],
   "startup": "application",
   "boot": "auto",
   "host_network": true,
   "options": {
     "xo_url": "https://xo.local",
-    "xo_token": "",
-    "username": "admin",
-    "password": "password",
+    "xo_token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "verify_ssl": false,
     "objects": [
       {"type": "host", "uuid": "uuid1", "name": "Host1"},
@@ -26,8 +24,6 @@
   "schema": {
     "xo_url": "str",
     "xo_token": "str",
-    "username": "str",
-    "password": "str",
     "verify_ssl": "bool",
     "objects": "list",
     "mqtt_host": "str",
