@@ -1,6 +1,6 @@
 {
   "name": "XCP-ng XO MQTT Updater",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "slug": "xo_mqtt_updater",
   "description": "Pravidelně čte metriky z XCP-ng hosta a publikuje do MQTT s podporou MQTT Discovery",
   "arch": ["amd64", "armv7", "aarch64"],
