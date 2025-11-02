@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# načtení konfigurace z prostředí
+# Home Assistant add-on start script
+
 XO_URL=${XO_URL:-"http://xo.local"}
 HOST_UUID=${HOST_UUID:-""}
 USERNAME=${USERNAME:-"admin"}
