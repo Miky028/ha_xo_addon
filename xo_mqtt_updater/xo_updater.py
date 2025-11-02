@@ -43,7 +43,7 @@ def publish_discovery(client, host_uuid, host_name):
         except Exception as e:
             log(f"Chyba při publikování Discovery pro {key}: {e}", "ERROR")
 
-def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=false):
+def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=False):
     log(f"Načítám statistiky hosta {host_uuid}")
     headers = {"Cookie": f"authenticationToken={token}"}
     url = f"{xo_url}/rest/v0/hosts/{host_uuid}/stats"
