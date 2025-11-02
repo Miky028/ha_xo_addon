@@ -6,7 +6,6 @@
   "arch": ["amd64", "armv7", "aarch64"],
   "startup": "services",
   "boot": "auto",
-  "image": "local/python:3.12-slim",
   "options": {
     "xo_url": "http://xo.local",
     "host_uuid": "",
