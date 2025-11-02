@@ -36,7 +36,6 @@ def fetch_metrics(xo_url, host_uuid, username, password):
             print(f"Chyba při volání XO API: {r.status_code}")
             return {}
         data = r.json().get("metrics", {})
-        # převod network na Mbps
         if "network" in data:
             data["network"] = data["network"] * 8 / 1_000_000
         return data
@@ -51,10 +50,14 @@ def main():
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--mqtt_server", required=True)
+    parser.add_argument("--mqtt_user", default="")
+    parser.add_argument("--mqtt_password", default="")
     parser.add_argument("--interval", type=int, default=30)
     args = parser.parse_args()
 
     client = mqtt.Client()
+    if args.mqtt_user and args.mqtt_password:
+        client.username_pw_set(args.mqtt_user, args.mqtt_password)
     client.connect(args.mqtt_server)
 
     publish_discovery(client, args.host_uuid)
