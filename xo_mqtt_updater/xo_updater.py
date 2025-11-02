@@ -1,63 +1,58 @@
 #!/usr/bin/env python3
-import argparse
-import time
+import os
 import json
+import time
 import requests
 import paho.mqtt.client as mqtt
-import urllib3
+from datetime import datetime
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# ========================
+# Pomocné funkce logování
+# ========================
 
-METRICS = {
-    "cpu": {"unit": "%", "name": "CPU Usage"},
-    "memory": {"unit": "%", "name": "RAM Usage"},
-    "disk": {"unit": "%", "name": "Disk Usage"},
-    "network_tx": {"unit": "Mbps", "name": "Network TX"},
-    "network_rx": {"unit": "Mbps", "name": "Network RX"}
-}
+def log(message, level="INFO"):
+    print(f"[{level}] {message}", flush=True)
 
-DEBUG = False
-
-
-def log(msg, level="INFO"):
-    print(f"[{level}] {msg}", flush=True)
-
-
-def debug_log(msg):
+def debug_log(message):
     if DEBUG:
-        print(f"[DEBUG] {msg}", flush=True)
+        log(f"[DEBUG] {message}")
 
+# ========================
+# Načtení konfigurace
+# ========================
 
-def str_to_bool(value):
-    """Bezpečně převede 'true'/'false' stringy z CLI na bool."""
-    if isinstance(value, bool):
-        return value
-    return str(value).lower() in ("1", "true", "yes", "on")
+CONFIG_PATH = "/data/options.json"
+if os.path.exists(CONFIG_PATH):
+    with open(CONFIG_PATH, "r") as f:
+        config = json.load(f)
+else:
+    config = {}
 
+# Načtení hodnot s výchozími hodnotami
+XO_URL = config.get("xo_url", "https://xo.local")
+XO_TOKEN = config.get("xo_token", "")
+HOST_UUID = config.get("host_uuid", "")
+MQTT_HOST = config.get("mqtt_host", "core-mosquitto")
+MQTT_PORT = int(config.get("mqtt_port", 1883))
+MQTT_USER = config.get("mqtt_user", "")
+MQTT_PASSWORD = config.get("mqtt_password", "")
+MQTT_TOPIC = config.get("mqtt_topic", "xcp-ng/host")
+INTERVAL = int(config.get("interval", 30))
+VERIFY_SSL = bool(config.get("verify_ssl", False))
+DEBUG = bool(config.get("debug", False))
 
-def publish_discovery(client, host_uuid, host_name):
-    debug_log(f"Volání publish_discovery(client, host_uuid={host_uuid}, host_name={host_name})")
-    for key, meta in METRICS.items():
-        discovery_topic = f"homeassistant/sensor/xo_{host_uuid}_{key}/config"
-        state_topic = f"xo/{host_uuid}/{key}"
-        payload = {
-            "name": f"{host_name} {meta['name']}",
-            "state_topic": state_topic,
-            "unit_of_measurement": meta["unit"],
-            "unique_id": f"xo_{host_uuid}_{key}",
-            "device": {
-                "identifiers": [host_uuid],
-                "name": host_name,
-                "model": "host",
-                "manufacturer": "Vates"
-            }
-        }
-        debug_log(f"Publishing discovery: {json.dumps(payload)} to {discovery_topic}")
-        try:
-            client.publish(discovery_topic, json.dumps(payload), retain=True)
-        except Exception as e:
-            log(f"Chyba při publikování Discovery pro {key}: {e}", "ERROR")
+log("Načtená konfigurace:")
+log(f"  XO_URL       = {XO_URL}")
+log(f"  HOST_UUID    = {HOST_UUID}")
+log(f"  MQTT_HOST    = {MQTT_HOST}:{MQTT_PORT}")
+log(f"  MQTT_TOPIC   = {MQTT_TOPIC}")
+log(f"  INTERVAL     = {INTERVAL}s")
+log(f"  VERIFY_SSL   = {VERIFY_SSL}")
+log(f"  DEBUG        = {DEBUG}")
 
+# ========================
+# Funkce pro čtení dat z XO API
+# ========================
 
 def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
     debug_log(f"Volání fetch_host_stats(xo_url={xo_url}, host_uuid={host_uuid}, token=****, verify_ssl={verify_ssl})")
@@ -70,91 +65,109 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         if r.status_code != 200:
             log(f"Chyba XO API {r.status_code}: {r.text}", "WARNING")
             return {}
+
         data = r.json()
-        debug_log(f"Data z XO API: {json.dumps(data)}")
+        stats = data.get("stats", {})
+        if not stats:
+            log("XO API nevrátilo žádná data v klíči 'stats'", "WARNING")
+            return {}
+
+        debug_log(f"Data z XO API (oříznuto): {json.dumps(stats)[:300]}...")
+
+        # CPU usage – průměr poslední hodnoty všech CPU jader
+        cpus = stats.get("cpus", {})
+        if isinstance(cpus, dict) and cpus:
+            cpu_values = [values[-1] for values in cpus.values() if values]
+            cpu_avg = sum(cpu_values) / len(cpu_values) if cpu_values else 0
+        else:
+            cpu_avg = 0
+
+        # Memory usage – využití RAM v %
+        mem_total = stats.get("memory", [0])[-1] if stats.get("memory") else 0
+        mem_free = stats.get("memoryFree", [0])[-1] if stats.get("memoryFree") else 0
+        mem_used_pct = ((mem_total - mem_free) / mem_total * 100) if mem_total > 0 else 0
+
+        # Disk activity – IO zápisy (v bajtech) sečtené přes zařízení
+        disk_usage = 0
+        for key, val in stats.items():
+            if key.startswith("xvd") or key.startswith("sd"):
+                if isinstance(val, dict) and "io_write" in val and val["io_write"]:
+                    disk_usage += val["io_write"][-1]
+
+        # Síťová aktivita – přenosy všech pif_* rozhraní
+        net_tx = 0
+        net_rx = 0
+        for key, val in stats.items():
+            if key.startswith("pif_") and isinstance(val, dict):
+                if "tx" in val and val["tx"]:
+                    net_tx += val["tx"][-1]
+                if "rx" in val and val["rx"]:
+                    net_rx += val["rx"][-1]
+
+        net_tx_mbps = net_tx * 8 / 1_000_000
+        net_rx_mbps = net_rx * 8 / 1_000_000
 
         metrics = {
-            "cpu": data.get("cpu", 0),
-            "memory": data.get("memory", {}).get("usage", 0),
-            "disk": data.get("disk", {}).get("usage", 0),
-            "network_tx": data.get("network", {}).get("tx", 0) * 8 / 1_000_000,
-            "network_rx": data.get("network", {}).get("rx", 0) * 8 / 1_000_000
+            "timestamp": datetime.utcnow().isoformat(),
+            "cpu": round(cpu_avg, 2),
+            "memory_used_pct": round(mem_used_pct, 2),
+            "memory_total_gb": round(mem_total / (1024**3), 2),
+            "memory_free_gb": round(mem_free / (1024**3), 2),
+            "disk_write_gb": round(disk_usage / 1_000_000_000, 2),
+            "network_tx_mbps": round(net_tx_mbps, 2),
+            "network_rx_mbps": round(net_rx_mbps, 2)
         }
+
         debug_log(f"Parsované metriky: {metrics}")
         return metrics
+
     except requests.exceptions.RequestException as e:
         log(f"Chyba při připojení k XO API: {e}", "ERROR")
         return {}
 
+# ========================
+# MQTT publikování
+# ========================
+
+def publish_metrics(client, topic, metrics):
+    try:
+        payload = json.dumps(metrics)
+        client.publish(topic, payload)
+        debug_log(f"MQTT publikováno na {topic}: {payload}")
+    except Exception as e:
+        log(f"Chyba při publikování do MQTT: {e}", "ERROR")
+
+# ========================
+# Hlavní funkce
+# ========================
 
 def main():
-    global DEBUG
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--xo_url", required=True)
-    parser.add_argument("--xo_token", required=True)
-    parser.add_argument("--host_uuid", required=True)
-    parser.add_argument("--host_name", required=True)
-    parser.add_argument("--verify_ssl", default=False)
-    parser.add_argument("--mqtt_host", required=True)
-    parser.add_argument("--mqtt_port", type=int, default=1883)
-    parser.add_argument("--mqtt_user", default="")
-    parser.add_argument("--mqtt_password", default="")
-    parser.add_argument("--update_interval", type=int, default=30)
-    parser.add_argument("--debug", default=False)
-    args = parser.parse_args()
-
-    # Převod string -> bool
-    args.verify_ssl = str_to_bool(args.verify_ssl)
-    args.debug = str_to_bool(args.debug)
-    DEBUG = args.debug
-
-    # Výpis konfigurace na začátku
-    log("Načtená konfigurace:")
-    safe_cfg = {
-        "xo_url": args.xo_url,
-        "host_uuid": args.host_uuid,
-        "host_name": args.host_name,
-        "verify_ssl": args.verify_ssl,
-        "mqtt_host": args.mqtt_host,
-        "mqtt_port": args.mqtt_port,
-        "mqtt_user": "***" if args.mqtt_user else "",
-        "update_interval": args.update_interval,
-        "debug": args.debug
-    }
-    for k, v in safe_cfg.items():
-        log(f"  {k}: {v}")
-
-    debug_log(f"Inicializuji MQTT klienta s host={args.mqtt_host}, port={args.mqtt_port}")
+    log("Inicializuji MQTT klienta...")
     client = mqtt.Client()
-    if args.mqtt_user and args.mqtt_password:
-        client.username_pw_set(args.mqtt_user, args.mqtt_password)
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+
     try:
-        client.connect(args.mqtt_host, args.mqtt_port)
-        debug_log("Připojeno k MQTT brokeru")
+        client.connect(MQTT_HOST, MQTT_PORT, 60)
     except Exception as e:
         log(f"Chyba při připojení k MQTT brokeru: {e}", "ERROR")
-        exit(1)
+        return
 
-    publish_discovery(client, args.host_uuid, args.host_name)
+    log("MQTT klient připojen. Zahajuji smyčku...")
 
-    log(f"Spouštím smyčku aktualizace každých {args.update_interval} sekund")
     while True:
-        metrics = fetch_host_stats(
-            args.xo_url, args.host_uuid, token=args.xo_token, verify_ssl=args.verify_ssl
-        )
-        if not metrics:
-            log(f"Žádné metriky k publikování pro hosta {args.host_uuid}", "WARNING")
+        metrics = fetch_host_stats(XO_URL, HOST_UUID, XO_TOKEN, verify_ssl=VERIFY_SSL)
+        if metrics:
+            publish_metrics(client, MQTT_TOPIC, metrics)
         else:
-            for key, value in metrics.items():
-                state_topic = f"xo/{args.host_uuid}/{key}"
-                debug_log(f"Publikace metriky: {key}={value} na {state_topic}")
-                try:
-                    client.publish(state_topic, value)
-                except Exception as e:
-                    log(f"Chyba při publikování {key}: {e}", "ERROR")
-        time.sleep(args.update_interval)
+            log(f"Žádné metriky k publikování pro hosta {HOST_UUID}", "WARNING")
 
+        time.sleep(INTERVAL)
+
+# ========================
+# Spuštění
+# ========================
 
 if __name__ == "__main__":
+    log("Spouštím XO MQTT updater v1.2.2 ...")
     main()
