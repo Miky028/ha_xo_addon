@@ -25,12 +25,12 @@
     "xo_url": "str",
     "xo_token": "str",
     "verify_ssl": "bool",
-    "objects": "list",
+    "objects": "list({type:str,uuid:str,name:str})",
     "mqtt_host": "str",
     "mqtt_port": "int",
     "mqtt_user": "str",
     "mqtt_password": "str",
     "update_interval": "int"
   },
-  "image": "local/python:3.12-slim"
+  "image": "python:3.12-slim"
 }
