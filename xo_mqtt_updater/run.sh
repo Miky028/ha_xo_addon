@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+cat /data/options.json
+
 XO_URL=${XO_URL:-"http://xo.local"}
 HOST_UUID=${HOST_UUID:-""}
 USERNAME=${USERNAME:-"admin"}
