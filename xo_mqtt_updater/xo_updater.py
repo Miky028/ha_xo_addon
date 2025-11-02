@@ -8,9 +8,10 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Mapování metrik, unit pro HA
 METRICS = {
     "cpu": {"unit": "%", "name": "CPU Usage"},
-    "ram": {"unit": "%", "name": "RAM Usage"},
+    "memory": {"unit": "%", "name": "RAM Usage"},
     "disk": {"unit": "%", "name": "Disk Usage"},
     "network_tx": {"unit": "Mbps", "name": "Network TX"},
     "network_rx": {"unit": "Mbps", "name": "Network RX"}
@@ -42,23 +43,28 @@ def publish_discovery(client, host_uuid, host_name):
         except Exception as e:
             log(f"Chyba při publikování Discovery pro {key}: {e}", "ERROR")
 
-def fetch_host_metrics(xo_url, host_uuid, token, verify_ssl=True):
-    log(f"Načítám metriky hosta {host_uuid}")
+def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
+    log(f"Načítám statistiky hosta {host_uuid}")
     headers = {"Cookie": f"authenticationToken={token}"}
-    url = f"{xo_url}/rest/v0/hosts/{host_uuid}?fields=metrics"
+    url = f"{xo_url}/rest/v0/hosts/{host_uuid}/stats"
     try:
         r = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
         if r.status_code != 200:
             log(f"Chyba XO API {r.status_code}: {r.text}", "WARNING")
             return {}
-        data = r.json().get("metrics", {})
+        data = r.json()
 
-        if "network_tx" in data:
-            data["network_tx"] = data["network_tx"] * 8 / 1_000_000
-        if "network_rx" in data:
-            data["network_rx"] = data["network_rx"] * 8 / 1_000_000
+        # Parsování metrik do METRICS
+        metrics = {}
+        metrics["cpu"] = data.get("cpu", 0)
+        metrics["memory"] = data.get("memory", {}).get("usage", 0)
+        metrics["disk"] = data.get("disk", {}).get("usage", 0)
 
-        return data
+        # síť přepočít na Mbps
+        metrics["network_tx"] = data.get("network", {}).get("tx", 0) * 8 / 1_000_000
+        metrics["network_rx"] = data.get("network", {}).get("rx", 0) * 8 / 1_000_000
+
+        return metrics
     except requests.exceptions.RequestException as e:
         log(f"Chyba při připojení k XO API: {e}", "ERROR")
         return {}
@@ -69,7 +75,7 @@ def main():
     parser.add_argument("--xo_token", required=True)
     parser.add_argument("--host_uuid", required=True)
     parser.add_argument("--host_name", required=True)
-    parser.add_argument("--verify_ssl", type=bool, default=True)
+    parser.add_argument("--verify_ssl", type=bool, default=False)
     parser.add_argument("--mqtt_host", required=True)
     parser.add_argument("--mqtt_port", type=int, default=1883)
     parser.add_argument("--mqtt_user", default="")
@@ -90,7 +96,7 @@ def main():
 
     log(f"Spouštím smyčku aktualizace každých {args.update_interval} sekund")
     while True:
-        metrics = fetch_host_metrics(
+        metrics = fetch_host_stats(
             args.xo_url, args.host_uuid, token=args.xo_token, verify_ssl=args.verify_ssl
         )
         if not metrics:
