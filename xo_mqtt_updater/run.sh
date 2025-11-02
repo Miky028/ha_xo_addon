@@ -10,8 +10,9 @@ MQTT_USER=${MQTT_USER:-""}
 MQTT_PASSWORD=${MQTT_PASSWORD:-""}
 UPDATE_INTERVAL=${UPDATE_INTERVAL:-30}
 
+set -x
 echo "Spouštím XO MQTT updater..."
-exec python /xo_updater.py \
+python /xo_updater.py \
     --xo_url "$XO_URL" \
     --host_uuid "$HOST_UUID" \
     --username "$USERNAME" \
