@@ -35,6 +35,7 @@ MQTT_TOPIC = cfg.get("mqtt_topic", "xcp-ng/host")
 UPDATE_INTERVAL = int(cfg.get("update_interval", 30))
 VERIFY_SSL = bool(cfg.get("verify_ssl", False))
 DEBUG = bool(cfg.get("debug", False))
+NETWORK_INTERFACE = cfg.get("network_interface", "2")  # vybraná síťovka
 
 log("Načtená konfigurace:")
 log(f"  XO_URL       = {XO_URL}")
@@ -45,6 +46,7 @@ log(f"  MQTT_TOPIC   = {MQTT_TOPIC}")
 log(f"  UPDATE_INTERVAL = {UPDATE_INTERVAL}s")
 log(f"  VERIFY_SSL   = {VERIFY_SSL}")
 log(f"  DEBUG        = {DEBUG}")
+log(f"  NETWORK_INTERFACE = {NETWORK_INTERFACE}")
 
 # ========================
 # Funkce pro čtení statistik hosta
@@ -58,17 +60,16 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
     try:
         r = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
         r.raise_for_status()
-        data = r.json()
-        stats = data.get("stats", {})
+        stats = r.json().get("stats", {})
 
         debug(f"Data z XO API (oříznuto): {json.dumps(stats)[:300]}...")
         if not stats:
             log("XO API nevrátilo žádná data.", "WARNING")
             return {}
 
-        # CPU
-        cpus = stats.get("cpus", {})
-        cpu_avg = sum([v[-1] for v in cpus.values() if v]) / len(cpus) if cpus else 0
+        # CPU load - použít jen poslední hodnotu load
+        cpu_load = stats.get("load", [])
+        cpu = cpu_load[-1] if cpu_load else 0
 
         # Memory
         mem_total = stats.get("memory", [0])[-1] if stats.get("memory") else 0
@@ -78,9 +79,10 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         # Disk write
         disk_write = sum(val.get("io_write", [0])[-1] for k,val in stats.items() if isinstance(val, dict) and "io_write" in val)
 
-        # Network TX/RX
-        net_tx = sum(val.get("tx", [0])[-1] for k,val in stats.items() if isinstance(val, dict) and "tx" in val)
-        net_rx = sum(val.get("rx", [0])[-1] for k,val in stats.items() if isinstance(val, dict) and "rx" in val)
+        # Network TX/RX - vybraná interface
+        pifs = stats.get("pifs", {})
+        net_rx = pifs.get("rx", {}).get(NETWORK_INTERFACE, [0])[-1] if "rx" in pifs else 0
+        net_tx = pifs.get("tx", {}).get(NETWORK_INTERFACE, [0])[-1] if "tx" in pifs else 0
         net_tx_mbps = net_tx * 8 / 1_000_000
         net_rx_mbps = net_rx * 8 / 1_000_000
 
@@ -88,7 +90,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
             "timestamp": datetime.utcnow().isoformat(),
             "host_uuid": host_uuid,
             "host_name": HOST_NAME,
-            "cpu": round(cpu_avg,2),
+            "cpu_load": round(cpu,2),
             "memory_used_pct": round(mem_used_pct,2),
             "memory_total_gb": round(mem_total/(1024**3),2),
             "memory_free_gb": round(mem_free/(1024**3),2),
