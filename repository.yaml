@@ -1,7 +1,7 @@
 name: "XO MQTT Updater Repository"
-maintainer: "David Reinwart"
-homepage: "https://github.com/Miky028/ha-xo-addon"
-url: "https://github.com/Miky028/ha-xo-addon"
+maintainer: "AI"
+homepage: "https://github.com/Miky028/ha_xo_addon"
+url: "https://github.com/Miky028/ha_xo_addon"
 addons:
   - name: "XCP-ng XO MQTT Updater"
     slug: "xo_mqtt_updater"
