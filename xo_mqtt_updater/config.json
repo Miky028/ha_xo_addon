@@ -32,5 +32,4 @@
     "mqtt_password": "str",
     "update_interval": "int"
   },
-  "image": "python:3.12-slim"
 }
