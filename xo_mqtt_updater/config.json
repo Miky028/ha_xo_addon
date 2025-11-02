@@ -1,6 +1,6 @@
 {
   "name": "XO MQTT Updater",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "slug": "xo_mqtt_updater",
   "description": "Publikuje statistiky XCP-ng hosta do MQTT.",
   "arch": ["amd64", "aarch64"],
@@ -19,7 +19,8 @@
     "mqtt_topic": "xcp-ng/host",
     "update_interval": 30,
     "verify_ssl": false,
-    "debug": true
+    "debug": true,
+    "network_interface": 2
   },
   "schema": {
     "xo_url": "str",
@@ -33,6 +34,7 @@
     "mqtt_topic": "str",
     "update_interval": "int?",
     "verify_ssl": "bool?",
-    "debug": "bool?"
+    "debug": "bool?",
+    "network_interface": "int?"
   }
 }
