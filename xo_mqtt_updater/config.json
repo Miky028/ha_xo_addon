@@ -22,7 +22,6 @@
     "mqtt_server": "str",
     "update_interval": "int"
   },
-  "webui": "http://[HOST]:[PORT]",
   "ports": {},
   "map": ["config:rw"],
   "host_network": true,
