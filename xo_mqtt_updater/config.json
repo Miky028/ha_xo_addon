@@ -1,8 +1,8 @@
 {
   "name": "XO MQTT Updater",
-  "version": "1.1.5",
+  "version": "1.2.0",
   "slug": "xo_mqtt_updater",
-  "description": "Publikuje statistiky jednoho hosta XO přes MQTT do Home Assistant (token-only)",
+  "description": "Publikuje statistiky jednoho hosta XO přes MQTT do Home Assistant (token-only) s rozšířeným debug logováním",
   "arch": ["amd64", "armv7", "aarch64"],
   "startup": "application",
   "boot": "auto",
@@ -17,7 +17,8 @@
     "mqtt_port": 1883,
     "mqtt_user": "",
     "mqtt_password": "",
-    "update_interval": 30
+    "update_interval": 30,
+    "debug": false
   },
   "schema": {
     "xo_url": "str",
@@ -29,6 +30,7 @@
     "mqtt_port": "int",
     "mqtt_user": "str",
     "mqtt_password": "str",
-    "update_interval": "int"
+    "update_interval": "int",
+    "debug": "bool"
   }
 }
