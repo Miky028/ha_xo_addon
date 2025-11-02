@@ -6,7 +6,7 @@ addons:
   - name: "XCP-ng XO MQTT Updater"
     slug: "xo_mqtt_updater"
     description: "Pravidelně čte metriky z XCP-ng hosta a publikuje do MQTT"
-    version: "1.0.8"
+    version: "1.0.9"
     image: "local/python:3.12-slim"
     startup: "services"
     boot: "auto"
