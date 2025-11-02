@@ -138,8 +138,8 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
                         disk_read_series[i] += io_read_samples[i]
         
         # Network TX/RX (převod a slicing)
-        raw_net_tx = stats.get("network_tx", [0])[-NUM_SAMPLES:]
-        raw_net_rx = stats.get("network_rx", [0])[-NUM_SAMPLES:]
+        raw_net_tx = stats.get("network_tx", [NETWORK_INTERFACE])[-NUM_SAMPLES:]
+        raw_net_rx = stats.get("network_rx", [NETWORK_INTERFACE])[-NUM_SAMPLES:]
         
         net_tx_mbps_series = [round(val * 8 / 1_000_000, 2) for val in raw_net_tx]
         net_rx_mbps_series = [round(val * 8 / 1_000_000, 2) for val in raw_net_rx]
