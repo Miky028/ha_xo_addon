@@ -1,20 +1,23 @@
 {
   "name": "XO MQTT Updater",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "slug": "xo_mqtt_updater",
   "description": "Publikuje statistiky XCP-ng hosta do MQTT.",
   "arch": ["amd64", "aarch64"],
   "startup": "application",
+  "boot": "auto",
+  "host_network": true,
   "options": {
-    "xo_url": "https://xo.m1k7.cz",
+    "xo_url": "https://xo.local",
     "xo_token": "your_token_here",
     "host_uuid": "1c1d1336-1567-4e23-bce4-a236f253fb02",
+    "host_name": "",
     "mqtt_host": "core-mosquitto",
     "mqtt_port": 1883,
     "mqtt_user": "",
     "mqtt_password": "",
     "mqtt_topic": "xcp-ng/host",
-    "interval": 30,
+    "update_interval": 30,
     "verify_ssl": false,
     "debug": true
   },
@@ -22,13 +25,14 @@
     "xo_url": "str",
     "xo_token": "password",
     "host_uuid": "str",
+    "host_name": "str?",
     "mqtt_host": "str",
-    "mqtt_port": "int",
+    "mqtt_port": "int?",
     "mqtt_user": "str?",
     "mqtt_password": "password?",
     "mqtt_topic": "str",
-    "interval": "int",
-    "verify_ssl": "bool",
-    "debug": "bool"
+    "update_interval": "int?",
+    "verify_ssl": "bool?",
+    "debug": "bool?"
   }
 }
