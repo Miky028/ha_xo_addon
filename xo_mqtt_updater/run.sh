@@ -8,6 +8,11 @@ XO_TOKEN=$(jq -r '.xo_token' $CONFIG_FILE)
 HOST_UUID=$(jq -r '.host_uuid' $CONFIG_FILE)
 HOST_NAME=$(jq -r '.host_name' $CONFIG_FILE)
 VERIFY_SSL=$(jq -r '.verify_ssl' $CONFIG_FILE)
+if [ "$VERIFY_SSL" = "false" ]; then
+  VERIFY_SSL=false
+else
+  VERIFY_SSL=true
+fi
 MQTT_HOST=$(jq -r '.mqtt_host' $CONFIG_FILE)
 MQTT_PORT=$(jq -r '.mqtt_port' $CONFIG_FILE)
 MQTT_USER=$(jq -r '.mqtt_user' $CONFIG_FILE)
