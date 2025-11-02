@@ -7,12 +7,21 @@ XO_URL=$(jq -r '.xo_url' $CONFIG_FILE)
 XO_TOKEN=$(jq -r '.xo_token' $CONFIG_FILE)
 HOST_UUID=$(jq -r '.host_uuid' $CONFIG_FILE)
 HOST_NAME=$(jq -r '.host_name' $CONFIG_FILE)
+
 VERIFY_SSL=$(jq -r '.verify_ssl' $CONFIG_FILE)
 if [ "$VERIFY_SSL" = "false" ]; then
   VERIFY_SSL=false
 else
   VERIFY_SSL=true
 fi
+
+DEBUG=$(jq -r '.debug' $CONFIG_FILE)
+if [ "$DEBUG" = "false" ]; then
+  DEBUG=false
+else
+  DEBUG=true
+fi
+
 MQTT_HOST=$(jq -r '.mqtt_host' $CONFIG_FILE)
 MQTT_PORT=$(jq -r '.mqtt_port' $CONFIG_FILE)
 MQTT_USER=$(jq -r '.mqtt_user' $CONFIG_FILE)
@@ -31,4 +40,5 @@ exec python /xo_updater.py \
     --mqtt_port "$MQTT_PORT" \
     --mqtt_user "$MQTT_USER" \
     --mqtt_password "$MQTT_PASSWORD" \
-    --update_interval "$UPDATE_INTERVAL"
+    --update_interval "$UPDATE_INTERVAL" \
+    --debug "$DEBUG"
