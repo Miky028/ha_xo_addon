@@ -13,7 +13,8 @@ Add-on pro Home Assistant, který pravidelně čte metriky z XCP-ng hosta přes 
 - `host_uuid` – UUID hosta
 - `username` / `password` – přístup do XO API
 - `mqtt_server` – MQTT broker
-- `update_interval` – frekvence aktualizace v sekundách
+- `mqtt_user` / `mqtt_password` – pro autentizaci na MQTT
+- `update_interval` – frekvence aktualizace (v sekundách)
 
 ### Instalace z GitHubu:
 1. Přidejte repozitář do Home Assistant Supervisor → Add-on Store → Repositories.  
