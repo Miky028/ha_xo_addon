@@ -1,0 +1,25 @@
+{
+  "name": "XCP-ng XO MQTT Updater",
+  "version": "1.0",
+  "slug": "xo_mqtt_updater",
+  "description": "Pravidelně čte metriky z XCP-ng hosta a publikuje do MQTT",
+  "arch": ["amd64", "armv7", "aarch64"],
+  "startup": "services",
+  "boot": "auto",
+  "options": {
+    "xo_url": "http://xo.local",
+    "host_uuid": "",
+    "username": "admin",
+    "password": "password",
+    "mqtt_server": "mqtt://core-mosquitto",
+    "update_interval": 30
+  },
+  "schema": {
+    "xo_url": "str",
+    "host_uuid": "str",
+    "username": "str",
+    "password": "str",
+    "mqtt_server": "str",
+    "update_interval": "int"
+  }
+}
