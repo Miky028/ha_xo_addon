@@ -6,7 +6,6 @@ import requests
 import paho.mqtt.client as mqtt
 import urllib3
 
-# Potlačení varování pro self-signed certifikáty
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 METRICS = {
@@ -20,22 +19,20 @@ METRICS = {
 def log(msg, level="INFO"):
     print(f"[{level}] {msg}", flush=True)
 
-def publish_discovery(client, obj):
-    obj_uuid = obj["uuid"]
-    obj_name = obj.get("name", obj_uuid)
-    log(f"Publikuji MQTT Discovery pro {obj['type']} {obj_name}")
+def publish_discovery(client, host_uuid, host_name):
+    log(f"Publikuji MQTT Discovery pro hosta {host_name}")
     for key, meta in METRICS.items():
-        discovery_topic = f"homeassistant/sensor/xo_{obj_uuid}_{key}/config"
-        state_topic = f"xo/{obj_uuid}/{key}"
+        discovery_topic = f"homeassistant/sensor/xo_{host_uuid}_{key}/config"
+        state_topic = f"xo/{host_uuid}/{key}"
         payload = {
-            "name": f"{obj_name} {meta['name']}",
+            "name": f"{host_name} {meta['name']}",
             "state_topic": state_topic,
             "unit_of_measurement": meta["unit"],
-            "unique_id": f"xo_{obj_uuid}_{key}",
+            "unique_id": f"xo_{host_uuid}_{key}",
             "device": {
-                "identifiers": [obj_uuid],
-                "name": obj_name,
-                "model": obj["type"],
+                "identifiers": [host_uuid],
+                "name": host_name,
+                "model": "host",
                 "manufacturer": "Vates"
             }
         }
@@ -45,12 +42,10 @@ def publish_discovery(client, obj):
         except Exception as e:
             log(f"Chyba při publikování Discovery pro {key}: {e}", "ERROR")
 
-def fetch_object_metrics(xo_url, obj, token, verify_ssl=True):
-    obj_type = obj["type"]
-    obj_uuid = obj["uuid"]
-    log(f"Načítám metriky {obj_type} {obj_uuid}")
+def fetch_host_metrics(xo_url, host_uuid, token, verify_ssl=True):
+    log(f"Načítám metriky hosta {host_uuid}")
     headers = {"Cookie": f"authenticationToken={token}"}
-    url = f"{xo_url}/rest/v0/{obj_type}s/{obj_uuid}?fields=metrics"
+    url = f"{xo_url}/rest/v0/hosts/{host_uuid}?fields=metrics"
     try:
         r = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
         if r.status_code != 200:
@@ -72,20 +67,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--xo_url", required=True)
     parser.add_argument("--xo_token", required=True)
+    parser.add_argument("--host_uuid", required=True)
+    parser.add_argument("--host_name", required=True)
     parser.add_argument("--verify_ssl", type=bool, default=True)
     parser.add_argument("--mqtt_host", required=True)
     parser.add_argument("--mqtt_port", type=int, default=1883)
     parser.add_argument("--mqtt_user", default="")
     parser.add_argument("--mqtt_password", default="")
     parser.add_argument("--update_interval", type=int, default=30)
-    parser.add_argument("--objects", type=str, required=True, help="JSON list of objects")
     args = parser.parse_args()
-
-    try:
-        objects = json.loads(args.objects)
-    except Exception as e:
-        log(f"Chyba při čtení seznamu objektů: {e}", "ERROR")
-        exit(1)
 
     client = mqtt.Client()
     if args.mqtt_user and args.mqtt_password:
@@ -96,20 +86,18 @@ def main():
         log(f"Chyba při připojení k MQTT brokeru: {e}", "ERROR")
         exit(1)
 
-    for obj in objects:
-        publish_discovery(client, obj)
+    publish_discovery(client, args.host_uuid, args.host_name)
 
     log(f"Spouštím smyčku aktualizace každých {args.update_interval} sekund")
     while True:
-        for obj in objects:
-            metrics = fetch_object_metrics(
-                args.xo_url, obj, token=args.xo_token, verify_ssl=args.verify_ssl
-            )
-            if not metrics:
-                log(f"Žádné metriky k publikování pro {obj['uuid']}", "WARNING")
-                continue
+        metrics = fetch_host_metrics(
+            args.xo_url, args.host_uuid, token=args.xo_token, verify_ssl=args.verify_ssl
+        )
+        if not metrics:
+            log(f"Žádné metriky k publikování pro hosta {args.host_uuid}", "WARNING")
+        else:
             for key, value in metrics.items():
-                state_topic = f"xo/{obj['uuid']}/{key}"
+                state_topic = f"xo/{args.host_uuid}/{key}"
                 try:
                     client.publish(state_topic, value)
                     log(f"Publikováno {key}={value} na {state_topic}")
