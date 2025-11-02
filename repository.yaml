@@ -1,0 +1,16 @@
+name: "XO MQTT Updater Repository"
+maintainer: "David Reinwart"
+homepage: "https://github.com/username/ha-xo-addon"
+url: "https://github.com/username/ha-xo-addon"
+addons:
+  - name: "XCP-ng XO MQTT Updater"
+    slug: "xo_mqtt_updater"
+    description: "Pravidelně čte metriky z XCP-ng hosta a publikuje do MQTT"
+    version: "1.0.0"
+    image: "local/python:3.12-slim"
+    startup: "services"
+    boot: "auto"
+    arch:
+      - amd64
+      - armv7
+      - aarch64
