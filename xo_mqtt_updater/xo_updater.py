@@ -8,7 +8,6 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Mapování metrik, unit pro HA
 METRICS = {
     "cpu": {"unit": "%", "name": "CPU Usage"},
     "memory": {"unit": "%", "name": "RAM Usage"},
@@ -17,11 +16,17 @@ METRICS = {
     "network_rx": {"unit": "Mbps", "name": "Network RX"}
 }
 
+DEBUG = False
+
 def log(msg, level="INFO"):
     print(f"[{level}] {msg}", flush=True)
 
+def debug_log(msg):
+    if DEBUG:
+        print(f"[DEBUG] {msg}", flush=True)
+
 def publish_discovery(client, host_uuid, host_name):
-    log(f"Publikuji MQTT Discovery pro hosta {host_name}")
+    debug_log(f"Volání publish_discovery(client, host_uuid={host_uuid}, host_name={host_name})")
     for key, meta in METRICS.items():
         discovery_topic = f"homeassistant/sensor/xo_{host_uuid}_{key}/config"
         state_topic = f"xo/{host_uuid}/{key}"
@@ -37,39 +42,39 @@ def publish_discovery(client, host_uuid, host_name):
                 "manufacturer": "Vates"
             }
         }
+        debug_log(f"Publishing discovery: {json.dumps(payload)} to {discovery_topic}")
         try:
             client.publish(discovery_topic, json.dumps(payload), retain=True)
-            log(f"Discovery publikováno: {discovery_topic}")
         except Exception as e:
             log(f"Chyba při publikování Discovery pro {key}: {e}", "ERROR")
 
-def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=False):
-    log(f"Načítám statistiky hosta {host_uuid}")
+def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
+    debug_log(f"Volání fetch_host_stats(xo_url={xo_url}, host_uuid={host_uuid}, token=****, verify_ssl={verify_ssl})")
     headers = {"Cookie": f"authenticationToken={token}"}
     url = f"{xo_url}/rest/v0/hosts/{host_uuid}/stats"
+    debug_log(f"Volám URL: {url}")
     try:
         r = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
         if r.status_code != 200:
             log(f"Chyba XO API {r.status_code}: {r.text}", "WARNING")
             return {}
         data = r.json()
+        debug_log(f"Data z XO API: {json.dumps(data)}")
 
-        # Parsování metrik do METRICS
         metrics = {}
         metrics["cpu"] = data.get("cpu", 0)
         metrics["memory"] = data.get("memory", {}).get("usage", 0)
         metrics["disk"] = data.get("disk", {}).get("usage", 0)
-
-        # síť přepočít na Mbps
         metrics["network_tx"] = data.get("network", {}).get("tx", 0) * 8 / 1_000_000
         metrics["network_rx"] = data.get("network", {}).get("rx", 0) * 8 / 1_000_000
-
+        debug_log(f"Parsované metriky: {metrics}")
         return metrics
     except requests.exceptions.RequestException as e:
         log(f"Chyba při připojení k XO API: {e}", "ERROR")
         return {}
 
 def main():
+    global DEBUG
     parser = argparse.ArgumentParser()
     parser.add_argument("--xo_url", required=True)
     parser.add_argument("--xo_token", required=True)
@@ -81,13 +86,18 @@ def main():
     parser.add_argument("--mqtt_user", default="")
     parser.add_argument("--mqtt_password", default="")
     parser.add_argument("--update_interval", type=int, default=30)
+    parser.add_argument("--debug", type=bool, default=False)
     args = parser.parse_args()
 
+    DEBUG = args.debug
+
+    debug_log(f"Inicializuji MQTT klienta s host={args.mqtt_host}, port={args.mqtt_port}")
     client = mqtt.Client()
     if args.mqtt_user and args.mqtt_password:
         client.username_pw_set(args.mqtt_user, args.mqtt_password)
     try:
         client.connect(args.mqtt_host, args.mqtt_port)
+        debug_log("Připojeno k MQTT brokeru")
     except Exception as e:
         log(f"Chyba při připojení k MQTT brokeru: {e}", "ERROR")
         exit(1)
@@ -104,9 +114,9 @@ def main():
         else:
             for key, value in metrics.items():
                 state_topic = f"xo/{args.host_uuid}/{key}"
+                debug_log(f"Publikace metriky: {key}={value} na {state_topic}")
                 try:
                     client.publish(state_topic, value)
-                    log(f"Publikováno {key}={value} na {state_topic}")
                 except Exception as e:
                     log(f"Chyba při publikování {key}: {e}", "ERROR")
         time.sleep(args.update_interval)
