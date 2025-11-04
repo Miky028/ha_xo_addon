@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.21"
+VERSION = "1.2.22"
 
 # ========================
 # Globální konstanty
@@ -88,7 +88,7 @@ def publish_discovery_config(client):
         return
 
     device_info = {
-        "identifiers": [f"xcp_ng_{HOST_UUID}"],
+        "identifiers": "{HOST_UUID}",
         "name": HOST_NAME,
         "model": "XCP-NG Host",
         "manufacturer": "Xen Orchestra",
