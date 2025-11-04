@@ -107,7 +107,7 @@ def publish_discovery_config(client):
     log("Publikuji konfigurační zprávy pro MQTT Discovery...")
 
     for key, (name, unit, icon, device_class) in metric_configs.items():
-        discovery_topic = f"homeassistant/sensor/xcp_ng_host/{key}/config"
+        discovery_topic = f"homeassistant/sensor/xcp_ng/{key}/config"
 
         payload = {
             "name": f"{HOST_NAME} {name}",
@@ -197,7 +197,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
 # ========================
 def publish_current_sample(client, topic, buffer, index):
     try:
-        state_topic = f"{topic}/{HOST_UUID}/state"
+        state_topic = f"{topic}/state"
         json_payload = {
             "uid": HOST_UUID,
             "cpu_total_load": f"{buffer['cpu_total_load'][index]:.2f}",
