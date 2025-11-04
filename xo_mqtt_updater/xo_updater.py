@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE (Změna pouze zde)
 # ========================
-VERSION = "1.2.17"
+VERSION = "1.2.18"
 
 # ========================
 # Globální konstanty
@@ -87,7 +87,6 @@ def on_publish(client, userdata, mid):
 # ========================
 def publish_discovery_config(client):
     """Publikuje konfigurační payload pro každý senzor (MQTT Discovery pro Home Assistant)."""
-    # Používá globální proměnnou VERSION
     global VERSION 
     
     if not HOST_UUID or not HOST_NAME:
@@ -99,7 +98,6 @@ def publish_discovery_config(client):
         "name": HOST_NAME,
         "model": "XCP-NG Host",
         "manufacturer": "Xen Orchestra",
-        # Použití konstantní VERSION definované v kódu
         "sw_version": VERSION
     }
     
@@ -121,14 +119,13 @@ def publish_discovery_config(client):
         
         payload = {
             "name": f"{HOST_NAME} {name}",
-            # Jednoduché unikátní ID pro senzor
             "unique_id": f"xcp_ng_{HOST_NAME}_{key}", 
             "state_topic": STATE_TOPIC, 
             "unit_of_measurement": unit,
             "icon": icon,
             "device_class": device_class,
-            # Extrakce hodnoty z JSONu
-            "value_template": f"{{{{ value_json.{key} }}}}", 
+            # ZMĚNA: Extrakce hodnoty z vnořeného JSON objektu 'sensor'
+            "value_template": f"{{{{ value_json.sensor.{key} }}}}", 
             "force_update": True,
             "device": device_info
         }
@@ -257,10 +254,12 @@ def publish_current_sample(client, topic, buffer, index):
         xo_interval = buffer.get("xo_interval", 5)
         sample_timestamp = end_timestamp - (NUM_SAMPLES - 1 - index) * xo_interval 
         
-        log(f"Publikuji vzorek [{index+1}/{NUM_SAMPLES}] naměřený před ~{round(time.time() - sample_timestamp, 1)}s. Stav CPU: {buffer.get('cpu_total_load', [0.0]*NUM_SAMPLES)[index]:.2f}%")
+        cpu_load_value = buffer.get('cpu_total_load', [0.0]*NUM_SAMPLES)[index]
+        log(f"Publikuji vzorek [{index+1}/{NUM_SAMPLES}] naměřený před ~{round(time.time() - sample_timestamp, 1)}s. Stav CPU: {cpu_load_value:.2f}%")
 
         # 1. Sestavení JSON payloadu
         metrics_to_publish = {
+            "uid": HOST_UUID, # NOVINKA: Přidání uid pro lepší identifikaci
             "cpu_total_load": buffer.get("cpu_total_load", [0.0] * NUM_SAMPLES)[index],
             "memory_used_pct": buffer.get("memory_used_pct", [0.0] * NUM_SAMPLES)[index],
             "network_tx_kbps": buffer.get("network_tx_kbps", [0.0] * NUM_SAMPLES)[index],
@@ -268,7 +267,13 @@ def publish_current_sample(client, topic, buffer, index):
         }
         
         # Konverze floatů na stringy (s formátováním) pro JSON payload
-        json_payload = {k: f"{v:.2f}" for k, v in metrics_to_publish.items()}
+        # ZMĚNA: Vytvoření vnořené struktury {"sensor": {...}}
+        json_payload = {
+            "sensor": {
+                k: (v if k == "uid" else f"{v:.2f}") 
+                for k, v in metrics_to_publish.items()
+            }
+        }
 
         # 2. Určení stavového tématu
         state_topic = f"{topic}/{HOST_UUID}/state"
@@ -342,6 +347,5 @@ def main():
 # Spuštění
 # ========================
 if __name__ == "__main__":
-    # Použití konstantní VERSION definované v kódu
     log(f"Spouštím XO MQTT Updater v{VERSION} - Plynulá 5s publikace s {UPDATE_INTERVAL}s zpožděním sběru dat.")
     main()
