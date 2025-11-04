@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.20"
+VERSION = "1.2.21"
 
 # ========================
 # Globální konstanty
@@ -88,7 +88,7 @@ def publish_discovery_config(client):
         return
 
     device_info = {
-        "identifiers": [f"xcp_ng_host_{HOST_UUID}"],
+        "identifiers": [f"xcp_ng_{HOST_UUID}"],
         "name": HOST_NAME,
         "model": "XCP-NG Host",
         "manufacturer": "Xen Orchestra",
@@ -102,7 +102,7 @@ def publish_discovery_config(client):
         "network_rx_kbps": ["Network RX", "kbps", "mdi:download-network", "data_rate"],
     }
 
-    STATE_TOPIC = f"{MQTT_TOPIC}/{HOST_UUID}/state"
+    STATE_TOPIC = f"{MQTT_TOPIC}/state"
 
     log("Publikuji konfigurační zprávy pro MQTT Discovery...")
 
@@ -111,7 +111,7 @@ def publish_discovery_config(client):
 
         payload = {
             "name": f"{HOST_NAME} {name}",
-            "unique_id": f"xcp_ng_{HOST_NAME}_{key}",
+            "unique_id": f"{HOST_UUID}_{key}",
             "state_topic": STATE_TOPIC,
             "unit_of_measurement": unit,
             "icon": icon,
