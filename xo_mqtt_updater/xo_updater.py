@@ -89,7 +89,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
             return {}
 
         # ----------------------------------------------------
-        # 1. LOGIKA PRO AGREGACI A PRŮMĚROVÁNÍ CPU (Opraveno - Dělíme počtem jader)
+        # 1. LOGIKA PRO AGREGACI A PRŮMĚROVÁNÍ CPU (Opraveno)
         # ----------------------------------------------------
         
         aggregated_cpu_series = [0.0] * NUM_SAMPLES 
@@ -117,7 +117,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
              aggregated_cpu_series = [0.0] * NUM_SAMPLES
 
         # ----------------------------------------------------
-        # 2. LOGIKA PRO PAMĚŤ A DISK I/O
+        # 2. LOGIKA PRO PAMĚŤ
         # ----------------------------------------------------
         
         # Memory % Used
@@ -129,35 +129,18 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
             mem_used_pct_series.append(pct)
         mem_used_pct_series += [0.0] * (NUM_SAMPLES - len(mem_used_pct_series))
 
-        # Disk IO (součet IO napříč VBD pro každý vzorek)
-        disk_write_series = [0.0] * NUM_SAMPLES
-        disk_read_series = [0.0] * NUM_SAMPLES
-        
-        for k, val in stats.items():
-            if isinstance(val, dict):
-                if "io_write" in val:
-                    io_write_samples = val["io_write"][-NUM_SAMPLES:]
-                    io_write_samples += [0.0] * (NUM_SAMPLES - len(io_write_samples)) 
-                    for i in range(NUM_SAMPLES):
-                        disk_write_series[i] += io_write_samples[i]
-
-                if "io_read" in val:
-                    io_read_samples = val["io_read"][-NUM_SAMPLES:]
-                    io_read_samples += [0.0] * (NUM_SAMPLES - len(io_read_samples)) 
-                    for i in range(NUM_SAMPLES):
-                        disk_read_series[i] += io_read_samples[i]
-        
         # ----------------------------------------------------
-        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps (Opraveno dle struktury)
+        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps (Opraveno a robustní)
         # Načítání ze struktury stats['pifs']['rx'/'tx'][NETWORK_INTERFACE]
         # ----------------------------------------------------
 
         net_tx_kbps_series = [0.0] * NUM_SAMPLES
         net_rx_kbps_series = [0.0] * NUM_SAMPLES
         
-        target_interface_id = str(NETWORK_INTERFACE) # Konfigurace obsahuje ID, např. "2"
+        # Vynutíme konverzi na string, abychom měli jistotu, že klíč je správného typu
+        target_interface_id = str(NETWORK_INTERFACE) 
         
-       # 1. Získání slovníku PIF metrik ('pifs')
+        # 1. Získání slovníku PIF metrik ('pifs')
         pifs_metrics = stats.get("pifs", {})
         debug(f"PIFS: Nalezeno {len(pifs_metrics.keys())} klíčů v 'pifs' metrikách. Klíče: {list(pifs_metrics.keys())}")
         
@@ -175,27 +158,26 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         if not raw_net_tx and not raw_net_rx:
             log(f"Cílové síťové rozhraní '{target_interface_id}' nenalezeno ve struktuře pifs['rx'/'tx']. Nastavuji zátěž na 0.", "WARNING")
         else:
-            # DEBUG VÝSTUP ZDE
+            # DEBUG VÝSTUP VZORKŮ
             debug(f"Načtené TX vzorky pro '{target_interface_id}' (prvních 5): {raw_net_tx[:5]}")
             debug(f"Načtené RX vzorky pro '{target_interface_id}' (prvních 5): {raw_net_rx[:5]}")
             debug(f"Celkem TX/RX vzorků v bufferu: {len(raw_net_tx)} / {len(raw_net_rx)}")
-            debug(f"Nalezena metrika pro cílové síťové rozhraní s indexem: {target_interface_id}. Počet TX vzorků: {len(raw_net_tx)}.")
             
             # Slicing a přepočet z Byte/s na Kilobit/s (B/s * 8 / 1000)
             net_tx_kbps_series = [round(v * 8 / 1000, 2) for v in raw_net_tx[-NUM_SAMPLES:]]
             net_rx_kbps_series = [round(v * 8 / 1000, 2) for v in raw_net_rx[-NUM_SAMPLES:]]
+            
+            debug(f"Přepočtené TX (kbps) (posledních {NUM_SAMPLES}): {net_tx_kbps_series}")
             
         # Doplnění nulami
         net_tx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_tx_kbps_series))
         net_rx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_rx_kbps_series))
         
         
-        # Vrácení bufferu se všemi metrikami a meta informacemi
+        # Vrácení bufferu (BEZ Disk IO metrik)
         return {
             "cpu_total_load": [round(v, 2) for v in aggregated_cpu_series],
             "memory_used_pct": mem_used_pct_series,
-            "disk_write_b_s": [round(v, 2) for v in disk_write_series],
-            "disk_read_b_s": [round(v, 2) for v in disk_read_series],
             "network_tx_kbps": net_tx_kbps_series,
             "network_rx_kbps": net_rx_kbps_series,
             "end_timestamp": end_timestamp, 
@@ -224,13 +206,10 @@ def publish_current_sample(client, topic, buffer, index):
         
         log(f"Publikuji vzorek [{index+1}/{NUM_SAMPLES}] naměřený před ~{round(time.time() - sample_timestamp, 1)}s. Stav CPU: {buffer.get('cpu_total_load', [0.0]*NUM_SAMPLES)[index]:.2f}%")
 
-        # Metriky k publikaci (klíč: pole hodnot, index je pozice v poli)
+        # Metriky k publikaci (BEZ Disk IO metrik)
         metrics_to_publish = {
             "cpu_total_load": buffer.get("cpu_total_load", [0.0] * NUM_SAMPLES)[index],
             "memory_used_pct": buffer.get("memory_used_pct", [0.0] * NUM_SAMPLES)[index],
-            "disk_write_b_s": buffer.get("disk_write_b_s", [0.0] * NUM_SAMPLES)[index],
-            "disk_read_b_s": buffer.get("disk_read_b_s", [0.0] * NUM_SAMPLES)[index],
-            # OPRAVENÉ KLÍČE
             "network_tx_kbps": buffer.get("network_tx_kbps", [0.0] * NUM_SAMPLES)[index],
             "network_rx_kbps": buffer.get("network_rx_kbps", [0.0] * NUM_SAMPLES)[index],
         }
