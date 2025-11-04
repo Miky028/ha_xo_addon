@@ -157,12 +157,16 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         
         target_interface_id = NETWORK_INTERFACE # Konfigurace obsahuje ID, např. "2"
         
-        # 1. Získání slovníku PIF metrik ('pifs')
+       # 1. Získání slovníku PIF metrik ('pifs')
         pifs_metrics = stats.get("pifs", {})
+        debug(f"PIFS: Nalezeno {len(pifs_metrics.keys())} klíčů v 'pifs' metrikách. Klíče: {list(pifs_metrics.keys())}")
         
         # 2. Získání RX a TX pod-slovníků
         rx_metrics = pifs_metrics.get("rx", {})
         tx_metrics = pifs_metrics.get("tx", {})
+        
+        debug(f"RX Metrics: Nalezeno {len(rx_metrics.keys())} klíčů. Pár prvních klíčů: {list(rx_metrics.keys())[:3]}")
+        debug(f"TX Metrics: Nalezeno {len(tx_metrics.keys())} klíčů. Pár prvních klíčů: {list(tx_metrics.keys())[:3]}")
         
         # 3. Načtení dat pro cílové rozhraní (pomocí indexu z konfigurace)
         raw_net_tx = tx_metrics.get(target_interface_id, [])
@@ -171,6 +175,10 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         if not raw_net_tx and not raw_net_rx:
             log(f"Cílové síťové rozhraní '{target_interface_id}' nenalezeno ve struktuře pifs['rx'/'tx']. Nastavuji zátěž na 0.", "WARNING")
         else:
+            # DEBUG VÝSTUP ZDE
+            debug(f"Načtené TX vzorky pro '{target_interface_id}' (prvních 5): {raw_net_tx[:5]}")
+            debug(f"Načtené RX vzorky pro '{target_interface_id}' (prvních 5): {raw_net_rx[:5]}")
+            debug(f"Celkem TX/RX vzorků v bufferu: {len(raw_net_tx)} / {len(raw_net_rx)}")
             debug(f"Nalezena metrika pro cílové síťové rozhraní s indexem: {target_interface_id}. Počet TX vzorků: {len(raw_net_tx)}.")
             
             # Slicing a přepočet z Byte/s na Kilobit/s (B/s * 8 / 1000)
