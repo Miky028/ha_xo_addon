@@ -155,7 +155,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         net_tx_kbps_series = [0.0] * NUM_SAMPLES
         net_rx_kbps_series = [0.0] * NUM_SAMPLES
         
-        target_interface_id = NETWORK_INTERFACE # Konfigurace obsahuje ID, např. "2"
+        target_interface_id = str(NETWORK_INTERFACE) # Konfigurace obsahuje ID, např. "2"
         
        # 1. Získání slovníku PIF metrik ('pifs')
         pifs_metrics = stats.get("pifs", {})
