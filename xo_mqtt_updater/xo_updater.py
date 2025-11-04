@@ -68,7 +68,7 @@ log(f"  UPDATE_INTERVAL = {UPDATE_INTERVAL}s (stahování) / {PUBLISH_INTERVAL_S
 def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
     debug(f"Volání fetch_host_stats(xo_url={xo_url}, host_uuid={host_uuid}, token=****, verify_ssl={verify_ssl})")
     headers = {"Cookie": f"authenticationToken={token}"}
-    url = f"{xo_url.rstrip('/')}/rest/v0/hosts/{host_uuid}/stats"
+    url = f"{xo_url.rstrip('/')}/rest/v0/hosts/{host_uuid}/stats?granularity=seconds"
     
     try:
         r = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
@@ -92,19 +92,24 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         # ----------------------------------------------------
         
         aggregated_cpu_series = [0.0] * NUM_SAMPLES 
-        cpu_keys = [k for k in stats if k.startswith("cpu_")]
+
+        cpu_metrics_dict = stats.get("cpus", {})
         
-        if not cpu_keys:
-             log("Nenalezeny žádné klíče pro CPU metriky.", "WARNING")
+        if not cpu_metrics_dict:
+             log("Nenalezen klíč 'cpus' pro CPU metriky. Zkontrolujte XO API response.", "WARNING")
         else:
-             for key in cpu_keys:
-                 cpu_data = stats.get(key, [])
+             # Iterujeme PŘES HODNOTY (seznamy vzorků) pod-slovníku "cpus"
+             for core_id, cpu_data in cpu_metrics_dict.items():
+                 # cpu_data je seznam vzorků pro dané jádro
                  latest_samples = cpu_data[-NUM_SAMPLES:]
+                 
                  # Doplnění nulami, pokud data chybí
                  latest_samples += [0.0] * (NUM_SAMPLES - len(latest_samples))
                  
                  for i in range(NUM_SAMPLES):
                      aggregated_cpu_series[i] += latest_samples[i]
+             
+             debug(f"Úspěšně zpracováno {len(cpu_metrics_dict)} CPU jader.")
         
         # ----------------------------------------------------
         # 2. LOGIKA PRO OSTATNÍ METRIKY: Slicing na NUM_SAMPLES
