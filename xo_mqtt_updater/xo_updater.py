@@ -9,7 +9,7 @@ from ha_mqtt_discoverable.sensors import Sensor
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.25"
+VERSION = "1.2.26"
 
 # ========================
 # Funkce logování
