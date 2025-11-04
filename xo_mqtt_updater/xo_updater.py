@@ -54,13 +54,29 @@ if UPDATE_INTERVAL % PUBLISH_INTERVAL_S != 0:
     UPDATE_INTERVAL = 30
 NUM_SAMPLES = UPDATE_INTERVAL // PUBLISH_INTERVAL_S
 
-log("Načtená konfigurace:")
-log(f"  XO_URL          = {XO_URL}")
-log(f"  HOST_UUID       = {HOST_UUID}")
-log(f"  HOST_NAME       = {HOST_NAME}")
-log(f"  MQTT_HOST       = {MQTT_HOST}:{MQTT_PORT}")
-log(f"  UPDATE_INTERVAL = {UPDATE_INTERVAL}s (stahování) / {PUBLISH_INTERVAL_S}s (publikace)")
-log(f"  NETWORK_INTERFACE = {NETWORK_INTERFACE} (cílový index sítě)")
+
+# ========================
+# MQTT Callback funkce
+# ==============================================================================
+def on_connect(client, userdata, flags, rc):
+    """Zpracovává výsledek připojení k brokeru."""
+    if rc == 0:
+        log("MQTT: Připojení k brokeru ÚSPĚŠNÉ. Kód: 0", "INFO")
+    elif rc == 1:
+        log("MQTT: Připojení SELHALO - Chybná verze protokolu. Kód: 1", "CRITICAL")
+    elif rc == 5:
+        log("MQTT: Připojení SELHALO - Chyba autentizace/autorizace. Kód: 5", "CRITICAL")
+    else:
+        log(f"MQTT: Připojení SELHALO. Kód: {rc}", "CRITICAL")
+        
+def on_disconnect(client, userdata, rc):
+    """Zpracovává odpojení od brokeru."""
+    log(f"MQTT: Klient odpojen s kódem {rc}.", "WARNING")
+
+def on_publish(client, userdata, mid):
+    """Potvrzení doručení zprávy při QoS > 0."""
+    debug(f"MQTT: Zpráva (ID: {mid}) ÚSPĚŠNĚ doručena brokeru.")
+# ==============================================================================
 
 
 # ========================
@@ -89,7 +105,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
             return {}
 
         # ----------------------------------------------------
-        # 1. LOGIKA PRO AGREGACI A PRŮMĚROVÁNÍ CPU (Opraveno)
+        # 1. LOGIKA PRO AGREGACI A PRŮMĚROVÁNÍ CPU
         # ----------------------------------------------------
         
         aggregated_cpu_series = [0.0] * NUM_SAMPLES 
@@ -109,7 +125,6 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
                      aggregated_cpu_series[i] += latest_samples[i]
 
         if num_cpu_cores > 0:
-            # Vydělení součtu počtem jader pro získání průměru (max 100%)
             aggregated_cpu_series = [s / num_cpu_cores for s in aggregated_cpu_series]
             log(f"Agregováno a zprůměrováno {num_cpu_cores} CPU jader.")
         elif cpu_metrics_dict:
@@ -130,8 +145,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         mem_used_pct_series += [0.0] * (NUM_SAMPLES - len(mem_used_pct_series))
 
         # ----------------------------------------------------
-        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps (Opraveno a robustní)
-        # Načítání ze struktury stats['pifs']['rx'/'tx'][NETWORK_INTERFACE]
+        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps (S DEBUG LOGOVÁNÍM)
         # ----------------------------------------------------
 
         net_tx_kbps_series = [0.0] * NUM_SAMPLES
@@ -197,16 +211,13 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
 # ========================
 def publish_current_sample(client, topic, buffer, index):
     try:
-        # Vzorky jsou indexovány od 0 (nejstarší) do 5 (nejnovější)
-        # Timestamp daného vzorku pro logování
         end_timestamp = buffer.get("end_timestamp", time.time())
         xo_interval = buffer.get("xo_interval", 5)
-        # Výpočet skutečného času, kdy byl vzorek pořízen (pro log)
         sample_timestamp = end_timestamp - (NUM_SAMPLES - 1 - index) * xo_interval 
         
         log(f"Publikuji vzorek [{index+1}/{NUM_SAMPLES}] naměřený před ~{round(time.time() - sample_timestamp, 1)}s. Stav CPU: {buffer.get('cpu_total_load', [0.0]*NUM_SAMPLES)[index]:.2f}%")
 
-        # Metriky k publikaci (BEZ Disk IO metrik)
+        # Metriky k publikaci
         metrics_to_publish = {
             "cpu_total_load": buffer.get("cpu_total_load", [0.0] * NUM_SAMPLES)[index],
             "memory_used_pct": buffer.get("memory_used_pct", [0.0] * NUM_SAMPLES)[index],
@@ -217,7 +228,7 @@ def publish_current_sample(client, topic, buffer, index):
         # Publikace každé metriky zvlášť (HA senzory)
         for key, value in metrics_to_publish.items():
             sub_topic = f"{topic}/{HOST_UUID}/{key}" # Používáme HOST_UUID
-            # Použijeme f-string pro formátování na 2 desetinná místa, pokud je to float
+            # Nastaveno QoS 1 pro potvrzení doručení (na to reaguje on_publish callback)
             client.publish(sub_topic, f"{value:.2f}", qos=1, retain=False)
             debug(f"Publikováno: {sub_topic} -> {value:.2f}")
             
@@ -230,18 +241,28 @@ def publish_current_sample(client, topic, buffer, index):
 def main():
     log("Inicializuji MQTT klienta...")
     client = mqtt.Client()
+    
+    # Nastavení callbacků pro ladění konektivity a publikace
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+    client.on_publish = on_publish 
+
     if MQTT_USER:
         client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
     try:
         client.connect(MQTT_HOST, MQTT_PORT, 60)
         client.loop_start() 
+        
+        # Krátká pauza, aby se MQTT klient stačil připojit a spustit on_connect callback
+        log("Čekám 2 sekundy na navázání MQTT spojení...")
+        time.sleep(2) 
     except Exception as e:
-        log(f"Chyba při připojení k MQTT brokeru: {e}", "ERROR")
+        log(f"Chyba při inicializaci MQTT klienta: {e}", "CRITICAL")
         return
 
     # Globální stavové proměnné
     metrics_buffer = {}
-    sample_index = NUM_SAMPLES # Začneme na indexu 6, abychom vynutili první fetch
+    sample_index = NUM_SAMPLES 
     last_fetch_time = 0 
     
     log(f"MQTT klient připojen. Zahajuji cyklus: Stahování dat každých {UPDATE_INTERVAL}s, publikace každých {PUBLISH_INTERVAL_S}s.")
@@ -261,7 +282,6 @@ def main():
                 log(f"Data úspěšně stažena a připravena pro {NUM_SAMPLES} vzorků. Zahajuji publikaci.")
             else:
                 log("Stažení dat selhalo. Přeskočuji publikaci a pokusím se znovu za 5s.", "ERROR")
-                # Neobnovujeme index ani čas, pokusíme se znovu v dalším cyklu.
                 time.sleep(PUBLISH_INTERVAL_S)
                 continue # Přeskočí publikaci
 
