@@ -110,6 +110,16 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
                      aggregated_cpu_series[i] += latest_samples[i]
              
              debug(f"Úspěšně zpracováno {len(cpu_metrics_dict)} CPU jader.")
+
+        # Vydělení součtu počtem jader pro získání průměru
+        if num_cpu_cores > 0:
+            # Každý vzorek vydělíme počtem jader.
+            # Tím dostaneme průměrnou zátěž jádra (max 100%)
+            aggregated_cpu_series = [s / num_cpu_cores for s in aggregated_cpu_series]
+            log(f"Agregováno a zprůměrováno {num_cpu_cores} CPU jader.")
+        elif cpu_metrics_dict:
+             log("Nalezena data CPU, ale počet jader je nula. Nastavuji zátěž na 0.", "WARNING")
+             aggregated_cpu_series = [0.0] * NUM_SAMPLES
         
         # ----------------------------------------------------
         # 2. LOGIKA PRO OSTATNÍ METRIKY: Slicing na NUM_SAMPLES
