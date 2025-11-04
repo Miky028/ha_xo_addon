@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE (Změna pouze zde)
 # ========================
-VERSION = "1.2.18"
+VERSION = "1.2.19"
 
 # ========================
 # Globální konstanty
@@ -124,8 +124,8 @@ def publish_discovery_config(client):
             "unit_of_measurement": unit,
             "icon": icon,
             "device_class": device_class,
-            # ZMĚNA: Extrakce hodnoty z vnořeného JSON objektu 'sensor'
-            "value_template": f"{{{{ value_json.sensor.{key} }}}}", 
+            # ZMĚNA: Extrakce hodnoty z plochého JSONu
+            "value_template": f"{{{{ value_json.{key} }}}}", 
             "force_update": True,
             "device": device_info
         }
@@ -257,22 +257,19 @@ def publish_current_sample(client, topic, buffer, index):
         cpu_load_value = buffer.get('cpu_total_load', [0.0]*NUM_SAMPLES)[index]
         log(f"Publikuji vzorek [{index+1}/{NUM_SAMPLES}] naměřený před ~{round(time.time() - sample_timestamp, 1)}s. Stav CPU: {cpu_load_value:.2f}%")
 
-        # 1. Sestavení JSON payloadu
+        # 1. Sestavení PLOCHÉHO JSON payloadu
         metrics_to_publish = {
-            "uid": HOST_UUID, # NOVINKA: Přidání uid pro lepší identifikaci
+            "uid": HOST_UUID, # Zachováno uid
             "cpu_total_load": buffer.get("cpu_total_load", [0.0] * NUM_SAMPLES)[index],
             "memory_used_pct": buffer.get("memory_used_pct", [0.0] * NUM_SAMPLES)[index],
             "network_tx_kbps": buffer.get("network_tx_kbps", [0.0] * NUM_SAMPLES)[index],
             "network_rx_kbps": buffer.get("network_rx_kbps", [0.0] * NUM_SAMPLES)[index],
         }
         
-        # Konverze floatů na stringy (s formátováním) pro JSON payload
-        # ZMĚNA: Vytvoření vnořené struktury {"sensor": {...}}
+        # Konverze floatů na stringy (s formátováním) pro JSON payload. Plochá struktura.
         json_payload = {
-            "sensor": {
-                k: (v if k == "uid" else f"{v:.2f}") 
-                for k, v in metrics_to_publish.items()
-            }
+            k: (v if k == "uid" else f"{v:.2f}") 
+            for k, v in metrics_to_publish.items()
         }
 
         # 2. Určení stavového tématu
