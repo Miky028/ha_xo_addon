@@ -14,13 +14,14 @@ PUBLISH_INTERVAL_S = 5 # Publikujeme každých 5 sekund
 # ========================
 # Funkce logování
 # ========================
+# Využíváme globální definici DEBUG (načtenou z configu)
 def log(msg, level="INFO"):
     print(f"[{level}] {msg}", flush=True)
 
 def debug(msg):
     # Kontrola, zda je DEBUG nadefinován v globálním rozsahu
     if 'DEBUG' in globals() and DEBUG:
-        log(f"[DEBUG] {msg}")
+        log(msg, level="DEBUG")
 
 # ========================
 # Načtení konfigurace
@@ -45,7 +46,7 @@ MQTT_TOPIC = cfg.get("mqtt_topic", "xcp-ng/host")
 UPDATE_INTERVAL = int(cfg.get("update_interval", 30)) # Zde je 30s interval pro stahování dat
 VERIFY_SSL = bool(cfg.get("verify_ssl", False))
 DEBUG = bool(cfg.get("debug", False)) # Definováno globálně
-NETWORK_INTERFACE = cfg.get("network_interface", "2")  # vybraná síťovka
+NETWORK_INTERFACE = cfg.get("network_interface", "2") # vybraná síťovka (např. "2" pro druhý PIF)
 
 # Ověření, že je interval sběru dat násobkem intervalu publikace
 if UPDATE_INTERVAL % PUBLISH_INTERVAL_S != 0:
@@ -54,21 +55,21 @@ if UPDATE_INTERVAL % PUBLISH_INTERVAL_S != 0:
 NUM_SAMPLES = UPDATE_INTERVAL // PUBLISH_INTERVAL_S
 
 log("Načtená konfigurace:")
-log(f"  XO_URL        = {XO_URL}")
-log(f"  HOST_UUID     = {HOST_UUID}")
-log(f"  HOST_NAME     = {HOST_NAME}")
-log(f"  MQTT_HOST     = {MQTT_HOST}:{MQTT_PORT}")
+log(f"  XO_URL          = {XO_URL}")
+log(f"  HOST_UUID       = {HOST_UUID}")
+log(f"  HOST_NAME       = {HOST_NAME}")
+log(f"  MQTT_HOST       = {MQTT_HOST}:{MQTT_PORT}")
 log(f"  UPDATE_INTERVAL = {UPDATE_INTERVAL}s (stahování) / {PUBLISH_INTERVAL_S}s (publikace)")
+log(f"  NETWORK_INTERFACE = {NETWORK_INTERFACE} (cílový index sítě)")
 
 
 # ========================
 # Funkce pro čtení statistik hosta
-# Vrací celý buffer se 6 vzorky pro všechny metriky
 # ========================
 def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
     debug(f"Volání fetch_host_stats(xo_url={xo_url}, host_uuid={host_uuid}, token=****, verify_ssl={verify_ssl})")
     headers = {"Cookie": f"authenticationToken={token}"}
-    url = f"{xo_url.rstrip('/')}/rest/v0/hosts/{host_uuid}/stats?granularity=seconds"
+    url = f"{xo_url.rstrip('/')}/rest/v0/hosts/{host_uuid}/stats"
     
     try:
         r = requests.get(url, headers=headers, timeout=10, verify=verify_ssl)
@@ -81,57 +82,45 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         end_timestamp = full_response.get("endTimestamp", int(time.time()))
 
         if xo_interval != PUBLISH_INTERVAL_S:
-             log(f"XO vrací interval {xo_interval}s, očekáváno {PUBLISH_INTERVAL_S}s. To ovlivní synchronizaci.", "WARNING")
+            log(f"XO vrací interval {xo_interval}s, očekáváno {PUBLISH_INTERVAL_S}s. To ovlivní synchronizaci.", "WARNING")
 
         if not stats:
             log("XO API nevrátilo žádná data.", "WARNING")
             return {}
 
         # ----------------------------------------------------
-        # 1. LOGIKA PRO AGREGACI CPU: Součet CPU jader pro NUM_SAMPLES vzorků
+        # 1. LOGIKA PRO AGREGACI A PRŮMĚROVÁNÍ CPU (Opraveno - Dělíme počtem jader)
         # ----------------------------------------------------
         
         aggregated_cpu_series = [0.0] * NUM_SAMPLES 
-
         cpu_metrics_dict = stats.get("cpus", {})
-
         num_cpu_cores = 0
         
         if not cpu_metrics_dict:
              log("Nenalezen klíč 'cpus' pro CPU metriky. Zkontrolujte XO API response.", "WARNING")
         else:
-             # Zjistíme počet jader
              num_cpu_cores = len(cpu_metrics_dict)
-            
-             # Iterujeme PŘES HODNOTY (seznamy vzorků) pod-slovníku "cpus"
+             
              for core_id, cpu_data in cpu_metrics_dict.items():
-                 # cpu_data je seznam vzorků pro dané jádro
                  latest_samples = cpu_data[-NUM_SAMPLES:]
-                 
-                 # Doplnění nulami, pokud data chybí
                  latest_samples += [0.0] * (NUM_SAMPLES - len(latest_samples))
                  
                  for i in range(NUM_SAMPLES):
-                     # Součet zátěže
                      aggregated_cpu_series[i] += latest_samples[i]
-             
-             debug(f"Úspěšně zpracováno {len(cpu_metrics_dict)} CPU jader.")
 
-        # Vydělení součtu počtem jader pro získání průměru
         if num_cpu_cores > 0:
-            # Každý vzorek vydělíme počtem jader.
-            # Tím dostaneme průměrnou zátěž jádra (max 100%)
+            # Vydělení součtu počtem jader pro získání průměru (max 100%)
             aggregated_cpu_series = [s / num_cpu_cores for s in aggregated_cpu_series]
             log(f"Agregováno a zprůměrováno {num_cpu_cores} CPU jader.")
         elif cpu_metrics_dict:
              log("Nalezena data CPU, ale počet jader je nula. Nastavuji zátěž na 0.", "WARNING")
              aggregated_cpu_series = [0.0] * NUM_SAMPLES
-        
+
         # ----------------------------------------------------
-        # 2. LOGIKA PRO OSTATNÍ METRIKY: Slicing na NUM_SAMPLES
+        # 2. LOGIKA PRO PAMĚŤ A DISK I/O
         # ----------------------------------------------------
         
-        # Memory % Used (vyžaduje výpočet pro každý vzorek)
+        # Memory % Used
         mem_total_series = stats.get("memory", [0])[-NUM_SAMPLES:]
         mem_free_series = stats.get("memoryFree", [0])[-NUM_SAMPLES:]
         mem_used_pct_series = []
@@ -158,26 +147,50 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
                     for i in range(NUM_SAMPLES):
                         disk_read_series[i] += io_read_samples[i]
         
-        # Network TX/RX (převod a slicing)
-        raw_net_tx = stats.get("network_tx", [NETWORK_INTERFACE])[-NUM_SAMPLES:]
-        raw_net_rx = stats.get("network_rx", [NETWORK_INTERFACE])[-NUM_SAMPLES:]
+        # ----------------------------------------------------
+        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps (Opraveno dle struktury)
+        # Načítání ze struktury stats['pifs']['rx'/'tx'][NETWORK_INTERFACE]
+        # ----------------------------------------------------
+
+        net_tx_kbps_series = [0.0] * NUM_SAMPLES
+        net_rx_kbps_series = [0.0] * NUM_SAMPLES
         
-        net_tx_mbps_series = [round(val * 8 / 1_000_000, 2) for val in raw_net_tx]
-        net_rx_mbps_series = [round(val * 8 / 1_000_000, 2) for val in raw_net_rx]
+        target_interface_id = NETWORK_INTERFACE # Konfigurace obsahuje ID, např. "2"
+        
+        # 1. Získání slovníku PIF metrik ('pifs')
+        pifs_metrics = stats.get("pifs", {})
+        
+        # 2. Získání RX a TX pod-slovníků
+        rx_metrics = pifs_metrics.get("rx", {})
+        tx_metrics = pifs_metrics.get("tx", {})
+        
+        # 3. Načtení dat pro cílové rozhraní (pomocí indexu z konfigurace)
+        raw_net_tx = tx_metrics.get(target_interface_id, [])
+        raw_net_rx = rx_metrics.get(target_interface_id, [])
 
-        net_tx_mbps_series += [0.0] * (NUM_SAMPLES - len(net_tx_mbps_series))
-        net_rx_mbps_series += [0.0] * (NUM_SAMPLES - len(net_rx_mbps_series))
-
-
-        # Vrátíme buffer se všemi metrikami a meta informacemi
+        if not raw_net_tx and not raw_net_rx:
+            log(f"Cílové síťové rozhraní '{target_interface_id}' nenalezeno ve struktuře pifs['rx'/'tx']. Nastavuji zátěž na 0.", "WARNING")
+        else:
+            debug(f"Nalezena metrika pro cílové síťové rozhraní s indexem: {target_interface_id}. Počet TX vzorků: {len(raw_net_tx)}.")
+            
+            # Slicing a přepočet z Byte/s na Kilobit/s (B/s * 8 / 1000)
+            net_tx_kbps_series = [round(v * 8 / 1000, 2) for v in raw_net_tx[-NUM_SAMPLES:]]
+            net_rx_kbps_series = [round(v * 8 / 1000, 2) for v in raw_net_rx[-NUM_SAMPLES:]]
+            
+        # Doplnění nulami
+        net_tx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_tx_kbps_series))
+        net_rx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_rx_kbps_series))
+        
+        
+        # Vrácení bufferu se všemi metrikami a meta informacemi
         return {
             "cpu_total_load": [round(v, 2) for v in aggregated_cpu_series],
             "memory_used_pct": mem_used_pct_series,
             "disk_write_b_s": [round(v, 2) for v in disk_write_series],
             "disk_read_b_s": [round(v, 2) for v in disk_read_series],
-            "network_tx_mbps": net_tx_mbps_series,
-            "network_rx_mbps": net_rx_mbps_series,
-            "end_timestamp": end_timestamp, # Unix timestamp posledního vzorku
+            "network_tx_kbps": net_tx_kbps_series,
+            "network_rx_kbps": net_rx_kbps_series,
+            "end_timestamp": end_timestamp, 
             "xo_interval": xo_interval
         }
 
@@ -209,8 +222,9 @@ def publish_current_sample(client, topic, buffer, index):
             "memory_used_pct": buffer.get("memory_used_pct", [0.0] * NUM_SAMPLES)[index],
             "disk_write_b_s": buffer.get("disk_write_b_s", [0.0] * NUM_SAMPLES)[index],
             "disk_read_b_s": buffer.get("disk_read_b_s", [0.0] * NUM_SAMPLES)[index],
-            "network_tx_mbps": buffer.get("network_tx_mbps", [0.0] * NUM_SAMPLES)[index],
-            "network_rx_mbps": buffer.get("network_rx_mbps", [0.0] * NUM_SAMPLES)[index],
+            # OPRAVENÉ KLÍČE
+            "network_tx_kbps": buffer.get("network_tx_kbps", [0.0] * NUM_SAMPLES)[index],
+            "network_rx_kbps": buffer.get("network_rx_kbps", [0.0] * NUM_SAMPLES)[index],
         }
 
         # Publikace každé metriky zvlášť (HA senzory)
@@ -266,8 +280,8 @@ def main():
 
         # 2. Publikace aktuálního vzorku (index 0 až 5)
         if metrics_buffer and sample_index < NUM_SAMPLES:
-             publish_current_sample(client, MQTT_TOPIC, metrics_buffer, sample_index)
-             sample_index += 1
+              publish_current_sample(client, MQTT_TOPIC, metrics_buffer, sample_index)
+              sample_index += 1
         
         # 3. Čekání 5 sekund
         time.sleep(PUBLISH_INTERVAL_S)
