@@ -94,10 +94,15 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         aggregated_cpu_series = [0.0] * NUM_SAMPLES 
 
         cpu_metrics_dict = stats.get("cpus", {})
+
+        num_cpu_cores = 0
         
         if not cpu_metrics_dict:
              log("Nenalezen klíč 'cpus' pro CPU metriky. Zkontrolujte XO API response.", "WARNING")
         else:
+             # Zjistíme počet jader
+             num_cpu_cores = len(cpu_metrics_dict)
+            
              # Iterujeme PŘES HODNOTY (seznamy vzorků) pod-slovníku "cpus"
              for core_id, cpu_data in cpu_metrics_dict.items():
                  # cpu_data je seznam vzorků pro dané jádro
@@ -107,6 +112,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
                  latest_samples += [0.0] * (NUM_SAMPLES - len(latest_samples))
                  
                  for i in range(NUM_SAMPLES):
+                     # Součet zátěže
                      aggregated_cpu_series[i] += latest_samples[i]
              
              debug(f"Úspěšně zpracováno {len(cpu_metrics_dict)} CPU jader.")
