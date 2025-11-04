@@ -56,19 +56,22 @@ NUM_SAMPLES = UPDATE_INTERVAL // PUBLISH_INTERVAL_S
 # MQTT Callback funkce
 # ==============================================================================
 def on_connect(client, userdata, flags, rc):
+    """Zpracovává výsledek připojení k brokeru."""
     if rc == 0:
-        log("MQTT: Připojení k brokeru ÚSPĚŠNÉ. Kód: 0", "INFO")
+        log("MQTT: Připojení k brokeru ÚSPĚŠNÉ. (Kód: 0)", "INFO")
         # Při úspěšném připojení hned publikujeme Discovery konfiguraci
         publish_discovery_config(client)
     elif rc == 5:
-        log("MQTT: Připojení SELHALO - Chyba autentizace/autorizace. Kód: 5", "CRITICAL")
+        log("MQTT: Připojení SELHALO - Chyba autentizace/autorizace. (Kód: 5)", "CRITICAL")
     else:
-        log(f"MQTT: Připojení SELHALO. Kód: {rc}", "CRITICAL")
+        log(f"MQTT: Připojení SELHALO. (Kód: {rc})", "CRITICAL")
         
 def on_disconnect(client, userdata, rc):
+    """Zpracovává odpojení od brokeru."""
     log(f"MQTT: Klient odpojen s kódem {rc}.", "WARNING")
 
 def on_publish(client, userdata, mid):
+    """Potvrzení doručení zprávy při QoS > 0."""
     debug(f"MQTT: Zpráva (ID: {mid}) ÚSPĚŠNĚ doručena brokeru.")
 # ==============================================================================
 
@@ -77,9 +80,7 @@ def on_publish(client, userdata, mid):
 # FUNKCE PRO PUBLIKACI MQTT DISCOVERY
 # ========================
 def publish_discovery_config(client):
-    """
-    Publikuje konfigurační payload pro každý senzor (MQTT Discovery pro Home Assistant).
-    """
+    """Publikuje konfigurační payload pro každý senzor (MQTT Discovery pro Home Assistant)."""
     if not HOST_UUID or not HOST_NAME:
         log("Chyba: Chybí HOST_UUID nebo HOST_NAME pro MQTT Discovery. Senzory nebudou automaticky nalezeny.", "ERROR")
         return
@@ -89,10 +90,9 @@ def publish_discovery_config(client):
         "name": HOST_NAME,
         "model": "XCP-NG Host",
         "manufacturer": "Xen Orchestra",
-        "sw_version": "v1.5.0"
+        "sw_version": "v1.2.16"
     }
     
-    # Definice metrik (klíč: [název, jednotka, ikona, třída dat])
     metric_configs = {
         "cpu_total_load": ["CPU Load", "%", "mdi:chip", "measurement"],
         "memory_used_pct": ["Memory Used", "%", "mdi:memory", "measurement"],
@@ -117,9 +117,12 @@ def publish_discovery_config(client):
             "force_update": True,
             "device": device_info
         }
+        
+        # ZMĚNA: Konverze payloadu na bajty (.encode('utf-8'))
+        payload_bytes = json.dumps(payload).encode('utf-8')
 
-        # Publikace Discovery zprávy s retain flagem, aby přežila restart brokeru
-        client.publish(discovery_topic, json.dumps(payload), qos=1, retain=True)
+        # Publikace Discovery zprávy s retain flagem
+        client.publish(discovery_topic, payload_bytes, qos=1, retain=True)
         debug(f"Discovery publikováno pro {key} na téma: {discovery_topic}")
         
     log("Discovery konfigurace úspěšně publikována.")
@@ -127,9 +130,9 @@ def publish_discovery_config(client):
 
 # ========================
 # Funkce pro čtení statistik hosta
-# ... (beze změny) ...
 # ========================
 def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
+    # ... (logika pro stahování dat beze změny)
     debug(f"Volání fetch_host_stats(xo_url={xo_url}, host_uuid={host_uuid}, token=****, verify_ssl={verify_ssl})")
     headers = {"Cookie": f"authenticationToken={token}"}
     url = f"{xo_url.rstrip('/')}/rest/v0/hosts/{host_uuid}/stats"
@@ -252,7 +255,7 @@ def publish_current_sample(client, topic, buffer, index):
 
         for key, value in metrics_to_publish.items():
             sub_topic = f"{topic}/{HOST_UUID}/{key}"
-            # Publikace dat na STAVOVÉ TÉMA
+            # Publikace dat na STAVOVÉ TÉMA (QoS 1)
             client.publish(sub_topic, f"{value:.2f}", qos=1, retain=False)
             debug(f"Publikováno: {sub_topic} -> {value:.2f}")
             
@@ -263,8 +266,11 @@ def publish_current_sample(client, topic, buffer, index):
 # Hlavní smyčka
 # ========================
 def main():
+    client_id = f"xcp-ng-exporter-{HOST_UUID}"
+    log(f"MQTT: Použitý Client ID: {client_id}")
+    
     log("Inicializuji MQTT klienta...")
-    client = mqtt.Client()
+    client = mqtt.Client(client_id=client_id)
     
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
@@ -318,5 +324,5 @@ def main():
 # Spuštění
 # ========================
 if __name__ == "__main__":
-    log(f"Spouštím XO MQTT Updater v1.5.1 - Plynulá 5s publikace s {UPDATE_INTERVAL}s zpožděním sběru dat.")
+    log(f"Spouštím XO MQTT Updater v1.2.16 - Plynulá 5s publikace s {UPDATE_INTERVAL}s zpožděním sběru dat.")
     main()
