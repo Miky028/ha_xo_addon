@@ -14,12 +14,10 @@ PUBLISH_INTERVAL_S = 5 # Publikujeme každých 5 sekund
 # ========================
 # Funkce logování
 # ========================
-# Využíváme globální definici DEBUG (načtenou z configu)
 def log(msg, level="INFO"):
     print(f"[{level}] {msg}", flush=True)
 
 def debug(msg):
-    # Kontrola, zda je DEBUG nadefinován v globálním rozsahu
     if 'DEBUG' in globals() and DEBUG:
         log(msg, level="DEBUG")
 
@@ -43,12 +41,11 @@ MQTT_PORT = int(cfg.get("mqtt_port", 1883))
 MQTT_USER = cfg.get("mqtt_user", "")
 MQTT_PASSWORD = cfg.get("mqtt_password", "")
 MQTT_TOPIC = cfg.get("mqtt_topic", "xcp-ng/host")
-UPDATE_INTERVAL = int(cfg.get("update_interval", 30)) # Zde je 30s interval pro stahování dat
+UPDATE_INTERVAL = int(cfg.get("update_interval", 30))
 VERIFY_SSL = bool(cfg.get("verify_ssl", False))
-DEBUG = bool(cfg.get("debug", False)) # Definováno globálně
-NETWORK_INTERFACE = cfg.get("network_interface", "2") # vybraná síťovka (např. "2" pro druhý PIF)
+DEBUG = bool(cfg.get("debug", False))
+NETWORK_INTERFACE = cfg.get("network_interface", "2")
 
-# Ověření, že je interval sběru dat násobkem intervalu publikace
 if UPDATE_INTERVAL % PUBLISH_INTERVAL_S != 0:
     log(f"Chyba: UPDATE_INTERVAL ({UPDATE_INTERVAL}s) musí být násobkem PUBLISH_INTERVAL_S ({PUBLISH_INTERVAL_S}s). Použiji 30s.", "ERROR")
     UPDATE_INTERVAL = 30
@@ -59,28 +56,78 @@ NUM_SAMPLES = UPDATE_INTERVAL // PUBLISH_INTERVAL_S
 # MQTT Callback funkce
 # ==============================================================================
 def on_connect(client, userdata, flags, rc):
-    """Zpracovává výsledek připojení k brokeru."""
     if rc == 0:
         log("MQTT: Připojení k brokeru ÚSPĚŠNÉ. Kód: 0", "INFO")
-    elif rc == 1:
-        log("MQTT: Připojení SELHALO - Chybná verze protokolu. Kód: 1", "CRITICAL")
+        # Při úspěšném připojení hned publikujeme Discovery konfiguraci
+        publish_discovery_config(client)
     elif rc == 5:
         log("MQTT: Připojení SELHALO - Chyba autentizace/autorizace. Kód: 5", "CRITICAL")
     else:
         log(f"MQTT: Připojení SELHALO. Kód: {rc}", "CRITICAL")
         
 def on_disconnect(client, userdata, rc):
-    """Zpracovává odpojení od brokeru."""
     log(f"MQTT: Klient odpojen s kódem {rc}.", "WARNING")
 
 def on_publish(client, userdata, mid):
-    """Potvrzení doručení zprávy při QoS > 0."""
     debug(f"MQTT: Zpráva (ID: {mid}) ÚSPĚŠNĚ doručena brokeru.")
 # ==============================================================================
 
 
 # ========================
+# FUNKCE PRO PUBLIKACI MQTT DISCOVERY
+# ========================
+def publish_discovery_config(client):
+    """
+    Publikuje konfigurační payload pro každý senzor (MQTT Discovery pro Home Assistant).
+    """
+    if not HOST_UUID or not HOST_NAME:
+        log("Chyba: Chybí HOST_UUID nebo HOST_NAME pro MQTT Discovery. Senzory nebudou automaticky nalezeny.", "ERROR")
+        return
+        
+    device_info = {
+        "identifiers": [f"xcp_ng_host_{HOST_UUID}"],
+        "name": HOST_NAME,
+        "model": "XCP-NG Host",
+        "manufacturer": "Xen Orchestra",
+        "sw_version": "v1.5.0"
+    }
+    
+    # Definice metrik (klíč: [název, jednotka, ikona, třída dat])
+    metric_configs = {
+        "cpu_total_load": ["CPU Load", "%", "mdi:chip", "measurement"],
+        "memory_used_pct": ["Memory Used", "%", "mdi:memory", "measurement"],
+        "network_tx_kbps": ["Network TX", "kbps", "mdi:upload-network", "data_rate"],
+        "network_rx_kbps": ["Network RX", "kbps", "mdi:download-network", "data_rate"],
+    }
+
+    log("Publikuji konfigurační zprávy pro MQTT Discovery...")
+
+    for key, (name, unit, icon, device_class) in metric_configs.items():
+        state_topic = f"{MQTT_TOPIC}/{HOST_UUID}/{key}"
+        discovery_topic = f"homeassistant/sensor/xcp_ng_{HOST_UUID}/{key}/config"
+        
+        payload = {
+            "name": f"{HOST_NAME} {name}",
+            "unique_id": f"xcp_ng_{HOST_UUID}_{key}",
+            "state_topic": state_topic,
+            "unit_of_measurement": unit,
+            "icon": icon,
+            "device_class": device_class,
+            "value_template": "{{ value | float }}",
+            "force_update": True,
+            "device": device_info
+        }
+
+        # Publikace Discovery zprávy s retain flagem, aby přežila restart brokeru
+        client.publish(discovery_topic, json.dumps(payload), qos=1, retain=True)
+        debug(f"Discovery publikováno pro {key} na téma: {discovery_topic}")
+        
+    log("Discovery konfigurace úspěšně publikována.")
+
+
+# ========================
 # Funkce pro čtení statistik hosta
+# ... (beze změny) ...
 # ========================
 def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
     debug(f"Volání fetch_host_stats(xo_url={xo_url}, host_uuid={host_uuid}, token=****, verify_ssl={verify_ssl})")
@@ -93,7 +140,6 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         full_response = r.json()
         stats = full_response.get("stats", {})
         
-        # Zjištění skutečného intervalu XO a posledního timestampu
         xo_interval = full_response.get("interval", 5) 
         end_timestamp = full_response.get("endTimestamp", int(time.time()))
 
@@ -135,7 +181,6 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         # 2. LOGIKA PRO PAMĚŤ
         # ----------------------------------------------------
         
-        # Memory % Used
         mem_total_series = stats.get("memory", [0])[-NUM_SAMPLES:]
         mem_free_series = stats.get("memoryFree", [0])[-NUM_SAMPLES:]
         mem_used_pct_series = []
@@ -145,50 +190,31 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         mem_used_pct_series += [0.0] * (NUM_SAMPLES - len(mem_used_pct_series))
 
         # ----------------------------------------------------
-        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps (S DEBUG LOGOVÁNÍM)
+        # 3. LOGIKA PRO SÍŤOVÉ METRIKY: Převod na kbps
         # ----------------------------------------------------
 
         net_tx_kbps_series = [0.0] * NUM_SAMPLES
         net_rx_kbps_series = [0.0] * NUM_SAMPLES
         
-        # Vynutíme konverzi na string, abychom měli jistotu, že klíč je správného typu
         target_interface_id = str(NETWORK_INTERFACE) 
-        
-        # 1. Získání slovníku PIF metrik ('pifs')
         pifs_metrics = stats.get("pifs", {})
-        debug(f"PIFS: Nalezeno {len(pifs_metrics.keys())} klíčů v 'pifs' metrikách. Klíče: {list(pifs_metrics.keys())}")
-        
-        # 2. Získání RX a TX pod-slovníků
         rx_metrics = pifs_metrics.get("rx", {})
         tx_metrics = pifs_metrics.get("tx", {})
         
-        debug(f"RX Metrics: Nalezeno {len(rx_metrics.keys())} klíčů. Pár prvních klíčů: {list(rx_metrics.keys())[:3]}")
-        debug(f"TX Metrics: Nalezeno {len(tx_metrics.keys())} klíčů. Pár prvních klíčů: {list(tx_metrics.keys())[:3]}")
-        
-        # 3. Načtení dat pro cílové rozhraní (pomocí indexu z konfigurace)
         raw_net_tx = tx_metrics.get(target_interface_id, [])
         raw_net_rx = rx_metrics.get(target_interface_id, [])
 
         if not raw_net_tx and not raw_net_rx:
             log(f"Cílové síťové rozhraní '{target_interface_id}' nenalezeno ve struktuře pifs['rx'/'tx']. Nastavuji zátěž na 0.", "WARNING")
         else:
-            # DEBUG VÝSTUP VZORKŮ
-            debug(f"Načtené TX vzorky pro '{target_interface_id}' (prvních 5): {raw_net_tx[:5]}")
-            debug(f"Načtené RX vzorky pro '{target_interface_id}' (prvních 5): {raw_net_rx[:5]}")
-            debug(f"Celkem TX/RX vzorků v bufferu: {len(raw_net_tx)} / {len(raw_net_rx)}")
-            
-            # Slicing a přepočet z Byte/s na Kilobit/s (B/s * 8 / 1000)
             net_tx_kbps_series = [round(v * 8 / 1000, 2) for v in raw_net_tx[-NUM_SAMPLES:]]
             net_rx_kbps_series = [round(v * 8 / 1000, 2) for v in raw_net_rx[-NUM_SAMPLES:]]
             
-            debug(f"Přepočtené TX (kbps) (posledních {NUM_SAMPLES}): {net_tx_kbps_series}")
-            
-        # Doplnění nulami
         net_tx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_tx_kbps_series))
         net_rx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_rx_kbps_series))
         
         
-        # Vrácení bufferu (BEZ Disk IO metrik)
+        # Vrácení bufferu
         return {
             "cpu_total_load": [round(v, 2) for v in aggregated_cpu_series],
             "memory_used_pct": mem_used_pct_series,
@@ -217,7 +243,6 @@ def publish_current_sample(client, topic, buffer, index):
         
         log(f"Publikuji vzorek [{index+1}/{NUM_SAMPLES}] naměřený před ~{round(time.time() - sample_timestamp, 1)}s. Stav CPU: {buffer.get('cpu_total_load', [0.0]*NUM_SAMPLES)[index]:.2f}%")
 
-        # Metriky k publikaci
         metrics_to_publish = {
             "cpu_total_load": buffer.get("cpu_total_load", [0.0] * NUM_SAMPLES)[index],
             "memory_used_pct": buffer.get("memory_used_pct", [0.0] * NUM_SAMPLES)[index],
@@ -225,10 +250,9 @@ def publish_current_sample(client, topic, buffer, index):
             "network_rx_kbps": buffer.get("network_rx_kbps", [0.0] * NUM_SAMPLES)[index],
         }
 
-        # Publikace každé metriky zvlášť (HA senzory)
         for key, value in metrics_to_publish.items():
-            sub_topic = f"{topic}/{HOST_UUID}/{key}" # Používáme HOST_UUID
-            # Nastaveno QoS 1 pro potvrzení doručení (na to reaguje on_publish callback)
+            sub_topic = f"{topic}/{HOST_UUID}/{key}"
+            # Publikace dat na STAVOVÉ TÉMA
             client.publish(sub_topic, f"{value:.2f}", qos=1, retain=False)
             debug(f"Publikováno: {sub_topic} -> {value:.2f}")
             
@@ -242,7 +266,6 @@ def main():
     log("Inicializuji MQTT klienta...")
     client = mqtt.Client()
     
-    # Nastavení callbacků pro ladění konektivity a publikace
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_publish = on_publish 
@@ -253,8 +276,7 @@ def main():
         client.connect(MQTT_HOST, MQTT_PORT, 60)
         client.loop_start() 
         
-        # Krátká pauza, aby se MQTT klient stačil připojit a spustit on_connect callback
-        log("Čekám 2 sekundy na navázání MQTT spojení...")
+        log("Čekám 2 sekundy na navázání MQTT spojení a spuštění Discovery...")
         time.sleep(2) 
     except Exception as e:
         log(f"Chyba při inicializaci MQTT klienta: {e}", "CRITICAL")
@@ -270,7 +292,6 @@ def main():
     while True:
         current_time = time.time()
         
-        # 1. Kontrola, zda je potřeba obnovit data (buď vyčerpán index, nebo uplynul 30s interval)
         if sample_index >= NUM_SAMPLES or current_time - last_fetch_time >= UPDATE_INTERVAL:
             log("Stahuji novou sadu dat z XO API...")
             new_buffer = fetch_host_stats(XO_URL, HOST_UUID, XO_TOKEN, VERIFY_SSL)
@@ -283,14 +304,12 @@ def main():
             else:
                 log("Stažení dat selhalo. Přeskočuji publikaci a pokusím se znovu za 5s.", "ERROR")
                 time.sleep(PUBLISH_INTERVAL_S)
-                continue # Přeskočí publikaci
+                continue
 
-        # 2. Publikace aktuálního vzorku (index 0 až 5)
         if metrics_buffer and sample_index < NUM_SAMPLES:
               publish_current_sample(client, MQTT_TOPIC, metrics_buffer, sample_index)
               sample_index += 1
         
-        # 3. Čekání 5 sekund
         time.sleep(PUBLISH_INTERVAL_S)
         
     client.loop_stop()
@@ -299,5 +318,5 @@ def main():
 # Spuštění
 # ========================
 if __name__ == "__main__":
-    log(f"Spouštím XO MQTT Updater v1.5.0 - Plynulá 5s publikace s {UPDATE_INTERVAL}s zpožděním sběru dat.")
+    log(f"Spouštím XO MQTT Updater v1.5.1 - Plynulá 5s publikace s {UPDATE_INTERVAL}s zpožděním sběru dat.")
     main()
