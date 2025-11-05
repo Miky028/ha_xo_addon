@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.34"
+VERSION = "1.2.35"
 
 # ========================
 # Globální konstanty
@@ -98,8 +98,8 @@ def publish_discovery_config(client):
     metric_configs = {
         "cpu_total_load": ["CPU Load", "%", "mdi:chip", None],
         "memory_used_pct": ["Memory Used", "%", "mdi:memory", None],
-        "network_tx_kbps": ["Network TX", "kbit/s", "mdi:upload-network", "data_rate"],
-        "network_rx_kbps": ["Network RX", "kbit/s", "mdi:download-network", "data_rate"],
+        "network_tx_kbps": ["Network TX", "bit/s", "mdi:upload-network", "data_rate"],
+        "network_rx_kbps": ["Network RX", "bit/s", "mdi:download-network", "data_rate"],
     }
 
     STATE_TOPIC = f"{MQTT_TOPIC}/sensor"
@@ -177,8 +177,8 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
         pifs_metrics = stats.get("pifs", {})
         tx_metrics = pifs_metrics.get("tx", {}).get(str(NETWORK_INTERFACE), [])
         rx_metrics = pifs_metrics.get("rx", {}).get(str(NETWORK_INTERFACE), [])
-        net_tx_kbps_series = [round(v * 8 / 1000, 2) for v in tx_metrics[-NUM_SAMPLES:]]
-        net_rx_kbps_series = [round(v * 8 / 1000, 2) for v in rx_metrics[-NUM_SAMPLES:]]
+        net_tx_kbps_series = tx_metrics[-NUM_SAMPLES:]
+        net_rx_kbps_series = rx_metrics[-NUM_SAMPLES:]
         net_tx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_tx_kbps_series))
         net_rx_kbps_series += [0.0] * (NUM_SAMPLES - len(net_rx_kbps_series))
 
