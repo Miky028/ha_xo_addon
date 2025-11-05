@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.31"
+VERSION = "1.2.32"
 
 # ========================
 # Globální konstanty
@@ -200,8 +200,8 @@ def publish_current_sample(client, topic, buffer, index):
         state_topic = f"{topic}/sensor"
         json_payload = {
             "uid": HOST_UUID,
-            "cpu_total_load": round(buffer['cpu_total_load'][index], 2)",
-            "memory_used_pct": round(buffer['memory_used_pct'][index], 2)",
+            "cpu_total_load": round(buffer['cpu_total_load'][index], 2),
+            "memory_used_pct": round(buffer['memory_used_pct'][index], 2),
             "network_tx_kbps": f"{buffer['network_tx_kbps'][index]:.2f}",
             "network_rx_kbps": f"{buffer['network_rx_kbps'][index]:.2f}"
         }
