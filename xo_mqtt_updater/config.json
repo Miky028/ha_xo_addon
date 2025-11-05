@@ -1,6 +1,6 @@
 {
   "name": "XO MQTT Updater",
-  "version": "1.2.32",
+  "version": "1.2.33",
   "slug": "xo_mqtt_updater",
   "description": "Publikuje statistiky XCP-ng hosta do MQTT.",
   "arch": ["amd64", "aarch64"],
