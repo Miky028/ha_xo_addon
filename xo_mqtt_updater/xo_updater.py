@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.36"
+VERSION = "1.2.37"
 
 # ========================
 # Globální konstanty
@@ -118,6 +118,7 @@ def publish_discovery_config(client):
             "device_class": device_class,
             "value_template": f"{{{{ value_json.{key} }}}}",
             "force_update": True,
+            "state_class": "measurement",
             "device": device_info
         }
         # přidá device_class jen pokud není None
