@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.33"
+VERSION = "1.2.34"
 
 # ========================
 # Globální konstanty
@@ -120,8 +120,9 @@ def publish_discovery_config(client):
             "force_update": True,
             "device": device_info
         }
-        if device_class:  # přidá device_class jen pokud není None
-        payload["device_class"] = device_class
+        # přidá device_class jen pokud není None
+        if device_class:  
+            payload["device_class"] = device_class
 
         payload_bytes = json.dumps(payload).encode('utf-8')
         result = client.publish(discovery_topic, payload_bytes, qos=1, retain=True)
