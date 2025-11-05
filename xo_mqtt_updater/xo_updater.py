@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.28"
+VERSION = "1.2.29"
 
 # ========================
 # Globální konstanty
@@ -197,7 +197,7 @@ def fetch_host_stats(xo_url, host_uuid, token, verify_ssl=True):
 # ========================
 def publish_current_sample(client, topic, buffer, index):
     try:
-        state_topic = f"{topic}/state"
+        state_topic = f"{topic}/sensor"
         json_payload = {
             "uid": HOST_UUID,
             "cpu_total_load": f"{buffer['cpu_total_load'][index]:.2f}",
