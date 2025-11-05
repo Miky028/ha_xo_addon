@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.29"
+VERSION = "1.2.30"
 
 # ========================
 # Globální konstanty
@@ -102,7 +102,7 @@ def publish_discovery_config(client):
         "network_rx_kbps": ["Network RX", "kbps", "mdi:download-network", "data_rate"],
     }
 
-    STATE_TOPIC = f"{MQTT_TOPIC}/state"
+    STATE_TOPIC = f"{MQTT_TOPIC}/sensor"
 
     log("Publikuji konfigurační zprávy pro MQTT Discovery...")
 
