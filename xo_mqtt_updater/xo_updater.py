@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 # ========================
 # KÓDEM DEFINOVANÁ VERZE
 # ========================
-VERSION = "1.2.32"
+VERSION = "1.2.33"
 
 # ========================
 # Globální konstanty
@@ -96,10 +96,10 @@ def publish_discovery_config(client):
     }
 
     metric_configs = {
-        "cpu_total_load": ["CPU Load", "%", "mdi:chip", "measurement"],
-        "memory_used_pct": ["Memory Used", "%", "mdi:memory", "measurement"],
-        "network_tx_kbps": ["Network TX", "kbps", "mdi:upload-network", "data_rate"],
-        "network_rx_kbps": ["Network RX", "kbps", "mdi:download-network", "data_rate"],
+        "cpu_total_load": ["CPU Load", "%", "mdi:chip", None],
+        "memory_used_pct": ["Memory Used", "%", "mdi:memory", None],
+        "network_tx_kbps": ["Network TX", "kbit/s", "mdi:upload-network", "data_rate"],
+        "network_rx_kbps": ["Network RX", "kbit/s", "mdi:download-network", "data_rate"],
     }
 
     STATE_TOPIC = f"{MQTT_TOPIC}/sensor"
@@ -120,6 +120,8 @@ def publish_discovery_config(client):
             "force_update": True,
             "device": device_info
         }
+        if device_class:  # přidá device_class jen pokud není None
+        payload["device_class"] = device_class
 
         payload_bytes = json.dumps(payload).encode('utf-8')
         result = client.publish(discovery_topic, payload_bytes, qos=1, retain=True)
@@ -202,8 +204,8 @@ def publish_current_sample(client, topic, buffer, index):
             "uid": HOST_UUID,
             "cpu_total_load": round(buffer['cpu_total_load'][index], 2),
             "memory_used_pct": round(buffer['memory_used_pct'][index], 2),
-            "network_tx_kbps": f"{buffer['network_tx_kbps'][index]:.2f}",
-            "network_rx_kbps": f"{buffer['network_rx_kbps'][index]:.2f}"
+            "network_tx_kbps": round(buffer['network_tx_kbps'][index], 2),
+            "network_rx_kbps": round(buffer['network_rx_kbps'][index], 2)
         }
         client.publish(state_topic, json.dumps(json_payload), qos=1, retain=False)
         debug(f"Publikováno na {state_topic}: {json_payload}")
